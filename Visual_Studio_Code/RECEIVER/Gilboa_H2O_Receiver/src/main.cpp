@@ -74,7 +74,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.01b"
+#define receiver_version "v1.3.01"
 
 #include <RadioLib.h>
 #include <SPI.h>
