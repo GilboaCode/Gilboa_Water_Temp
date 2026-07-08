@@ -74,7 +74,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.01a"
+#define receiver_version "v1.3.01b"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -1294,11 +1294,11 @@ void sendEmailAlert(String emailsubject, String emailmessage) {
 void command_help (String chat_id, String text){
   String runningText  = "Commands:";
   runningText += "\n";
-  runningText += "            /status - Show current status of Receiver and Sender";
+  runningText += " /status - Status of Receiver and Sender";
   runningText += "\n";
-  runningText += "            /rom - Show current ROM assignments and allow changes";
+  runningText += " /rom - ROM assignments";
   runningText += "\n";
-  runningText += "            /help - Show available commands";
+  runningText += " /help - Available commands";
   bot.sendMessage(chat_id,runningText,"");
 }
 
@@ -1306,23 +1306,23 @@ void command_help (String chat_id, String text){
 void command_superhelp (String chat_id, String text){
   String runningText  = "Commands:";
   runningText += "\n";
-  runningText += "            /status - Show current status of Receiver and Sender";
+  runningText += " /status - Status of Receiver and Sender";
   runningText += "\n";
-  runningText += "            /rom - Show current ROM assignments and allow changes";
+  runningText += " /rom - ROM assignments";
   runningText += "\n";
-  runningText += "            /debug-on - Turn on debug mode for Sender (1 min update time)";
+  runningText += " /debug-on - Sender Debug mode on(1 min update time)";
   runningText += "\n";
-  runningText += "            /debug-off - Turn off debug mode for Sender";
+  runningText += " /debug-off - Sender Debug mode off";
   runningText += "\n";
-  runningText += "            /ota - Show OTA partition information for Receiver";  
+  runningText += " /ota - Receiver OTA information";  
   runningText += "\n";
-  runningText += "            /_UPDATE - Check for firmware update for Receiver";
+  runningText += " /_UPDATE - Update Receiver firmware";
   runningText += "\n";
-  runningText += "            /_RESET - Reset the Receiver";
+  runningText += " /_RESET - Receiver Reset";
   runningText += "\n";
-  runningText += "            /help - Show available commands";
+  runningText += " /help - Available commands";
   runningText += "\n";
-  runningText += "            /superhelp - Show detailed command information";
+  runningText += " /superhelp - Super User commands";
   bot.sendMessage(chat_id,runningText,"");
 }
 
