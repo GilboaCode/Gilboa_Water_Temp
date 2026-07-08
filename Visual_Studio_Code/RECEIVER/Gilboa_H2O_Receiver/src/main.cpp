@@ -74,7 +74,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.01"
+#define receiver_version "v1.3.01a"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -229,6 +229,7 @@ String Sender_temp_farenheit ;
 // Telegram Bot variables
 bool telegramResetFlag = false; // Flag to indicate if the /reset command was received from the Telegram bot
 bool telegramUpdateFlag = false; // Flag to indicate if the /update command was received from the Telegram bot
+bool telegramUpdateFailedFlag = false; // Flag to indicate if the /update command failed
 const char* firmwareURL ="https://github.com/GilboaCode/Gilboa_Water_Temp/releases/latest/download/firmware.bin";
 bool updateStarted = false;
 
@@ -1518,37 +1519,138 @@ void printOTAInfo()
     Serial.println();
 }
 
+// Resolve HTTP redirects and return the final URL
+String resolveRedirect(const char *url)
+{
+    WiFiClientSecure client;
+    client.setInsecure();
+
+    HTTPClient http;
+
+    // Don't automatically follow redirects
+    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+
+    if (!http.begin(client, url))
+    {
+        Serial.println("HTTP begin failed");
+        return "";
+    }
+
+    int code = http.GET();
+
+    Serial.printf("HTTP Response = %d\n", code);
+
+    if (code == HTTP_CODE_MOVED_PERMANENTLY ||
+        code == HTTP_CODE_FOUND ||
+        code == HTTP_CODE_TEMPORARY_REDIRECT ||
+        code == HTTP_CODE_PERMANENT_REDIRECT)
+    {
+        String newURL = http.header("Location");
+
+        Serial.println("Redirect URL:");
+        Serial.println(newURL);
+
+        http.end();
+        return newURL;
+    }
+
+    http.end();
+
+    return String(url);
+}
+
+
+
+
+void testURL(const String &url)
+{
+    WiFiClientSecure client;
+    client.setInsecure();
+
+    HTTPClient http;
+
+    if (!http.begin(client, url))
+    {
+        Serial.println("HTTP begin failed");
+        return;
+    }
+
+    const char *headerKeys[] = {"Location"};
+    http.collectHeaders(headerKeys, 1);
+
+    int code = http.GET();
+
+    Serial.printf("\nURL: %s\n", url.c_str());
+    Serial.printf("HTTP Response Code = %d\n", code);
+
+    if (http.hasHeader("Location"))
+    {
+        Serial.print("Location: ");
+        Serial.println(http.header("Location"));
+    }
+
+    http.end();
+}
+
 // OTA update function
 void performOTA()
 {
-    Serial.println("\nStarting OTA update...");
+  testURL(firmwareURL);
+  //testURL("https://github.com/GilboaCode/Gilboa_Water_Temp/releases/download/v1.3.01/firmware.bin");
 
-    WiFiClientSecure client;
+  Serial.println("\nStarting OTA update...");
+  telegramUpdateFailedFlag=false; // Clear update failed flag before starting OTA
+  WiFiClientSecure client;
 
-    client.setInsecure();
-    httpUpdate.rebootOnUpdate(true);
 
-    t_httpUpdate_return result =
-        httpUpdate.update(client, firmwareURL);
 
-    switch (result)
-    {
-        case HTTP_UPDATE_FAILED:
-            Serial.printf("Update failed. Error (%d): %s\n",
-                          httpUpdate.getLastError(),
-                          httpUpdate.getLastErrorString().c_str());
-            break;
 
-        case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("No update available.");
-            break;
+  client.setInsecure();
+  httpUpdate.rebootOnUpdate(true);
+  httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
-        case HTTP_UPDATE_OK:
-            // Never reached.
-            // The ESP automatically reboots.
-            Serial.println("Update successful.");
-            break;
-    }
+/*
+  String downloadURL = resolveRedirect(firmwareURL);
+
+  if (downloadURL.length() == 0)
+  {
+  Serial.println("Unable to resolve redirect.");
+  return;
+  }
+
+  Serial.println("Downloading from:");
+  Serial.println(downloadURL);
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  t_httpUpdate_return result =
+  httpUpdate.update(client, downloadURL);
+*/
+t_httpUpdate_return result =
+    httpUpdate.update(client, firmwareURL);
+
+
+
+  switch (result)
+  {
+  case HTTP_UPDATE_FAILED:
+  Serial.printf("Update failed. Error (%d): %s\n",
+  httpUpdate.getLastError(),
+  httpUpdate.getLastErrorString().c_str());
+  telegramUpdateFailedFlag = true;
+  break;
+
+  case HTTP_UPDATE_NO_UPDATES:
+  Serial.println("No update available.");
+  break;
+
+  case HTTP_UPDATE_OK:
+  // Never reached.
+  // The ESP automatically reboots.
+  Serial.println("Update successful.");
+  break;
+}
 }
 
 // Telegram Bot - Handle incoming messages
@@ -1594,6 +1696,11 @@ void checkTelegram() {
     if (telegramUpdateFlag==true) {
       telegramUpdateFlag = false;
       performOTA();
+      if (telegramUpdateFailedFlag==true) {
+        bot.sendMessage(bot.messages[0].chat_id, "OTA update failed. Check Serial Monitor for details.", "");
+      } else {
+        bot.sendMessage(bot.messages[0].chat_id, "OTA update successful. ESP32 will reboot.", "");
+      }
     }
   }
 }
