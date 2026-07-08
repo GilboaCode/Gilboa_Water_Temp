@@ -1,0 +1,20 @@
+# PlatformIO
+**/.pio/
+**/.vscode/
+
+# Build output
+**/build/
+**/dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# KiCAD
+*.kicad_prl
+*.kicad_prl-bak
+*-backups/
+
+# OS files
+.DS_Store
+Thumbs.db

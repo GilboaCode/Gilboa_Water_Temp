@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "Gilboa_H2O_Receiver",
+			"path": "Gilboa_H2O_Receiver"
+		},
+		{
+			"name": "Gilboa_H2O_Sender",
+			"path": "Gilboa_H2O_Sender"
+		},
+		{
+			"name": "Gilboa_Water_Gauge_Sender_Simulator",
+			"path": "Gilboa_Water_Gauge_Sender_Simulator"
+		}
+	],
+	"settings": {}
+}
