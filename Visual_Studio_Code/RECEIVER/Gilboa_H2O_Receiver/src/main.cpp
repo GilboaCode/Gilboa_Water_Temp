@@ -1,3 +1,6 @@
+// Receiver -- V1.3.01
+//  * Modified the location of the firmware.bin to be in the "latest" folder of the GitHub repository to allow for future versioning of the firmware.
+//
 // Receiver -- V1.3.00
 //  * Added a new command (/@UPDATE@)to the Telegram bot to update the Receiver remotely. It will download and install the latest firmware from the GitHub repository 
 //
@@ -71,7 +74,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.00"
+#define receiver_version "v1.3.01"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -226,7 +229,7 @@ String Sender_temp_farenheit ;
 // Telegram Bot variables
 bool telegramResetFlag = false; // Flag to indicate if the /reset command was received from the Telegram bot
 bool telegramUpdateFlag = false; // Flag to indicate if the /update command was received from the Telegram bot
-const char* firmwareURL ="https://raw.githubusercontent.com/GilboaCode/Gilboa_Water_Temp/main/Programs/Receiver/Running/firmware.bin";
+const char* firmwareURL ="https://github.com/GilboaCode/Gilboa_Water_Temp/releases/latest/download/firmware.bin";
 bool updateStarted = false;
 
 
@@ -1290,17 +1293,38 @@ void sendEmailAlert(String emailsubject, String emailmessage) {
 void command_help (String chat_id, String text){
   String runningText  = "Commands:";
   runningText += "\n";
-  runningText += "            /status";
+  runningText += "            /status - Show current status of Receiver and Sender";
   runningText += "\n";
-  runningText += "            /rom";
+  runningText += "            /rom - Show current ROM assignments and allow changes";
   runningText += "\n";
-//  runningText += "            /debug-on";
-//  runningText += "\n";
-//  runningText += "            /debug-off";
-//  runningText += "\n";
-  runningText += "            /help";
+  runningText += "            /help - Show available commands";
   bot.sendMessage(chat_id,runningText,"");
 }
+
+// /help or /start command - show available commands
+void command_superhelp (String chat_id, String text){
+  String runningText  = "Commands:";
+  runningText += "\n";
+  runningText += "            /status - Show current status of Receiver and Sender";
+  runningText += "\n";
+  runningText += "            /rom - Show current ROM assignments and allow changes";
+  runningText += "\n";
+  runningText += "            /debug-on - Turn on debug mode for Sender (1 min update time)";
+  runningText += "\n";
+  runningText += "            /debug-off - Turn off debug mode for Sender";
+  runningText += "\n";
+  runningText += "            /ota - Show OTA partition information for Receiver";  
+  runningText += "\n";
+  runningText += "            /@UPDATE@ - Check for firmware update for Receiver";
+  runningText += "\n";
+  runningText += "            /@RESET@ - Reset the Receiver";
+  runningText += "\n";
+  runningText += "            /help - Show available commands";
+  runningText += "\n";
+  runningText += "            /superhelp - Show detailed command information";
+  bot.sendMessage(chat_id,runningText,"");
+}
+
 
 //  /status command
 //      Receiver IP address
@@ -1551,6 +1575,7 @@ void handleNewMessages(int numNewMessages)
     if (text == "/debug-off") command_debug_off (chat_id,text);
     if (text == "/@UPDATE@") command_update(chat_id,text);
     if (text == "/@RESET@") command_reset(chat_id,text);
+    if (text == "/superhelp") command_superhelp(chat_id,text);
   }
 }
 
