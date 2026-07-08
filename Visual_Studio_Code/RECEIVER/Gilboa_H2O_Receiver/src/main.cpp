@@ -1316,9 +1316,9 @@ void command_superhelp (String chat_id, String text){
   runningText += "\n";
   runningText += "            /ota - Show OTA partition information for Receiver";  
   runningText += "\n";
-  runningText += "            /@UPDATE@ - Check for firmware update for Receiver";
+  runningText += "            /_UPDATE - Check for firmware update for Receiver";
   runningText += "\n";
-  runningText += "            /@RESET@ - Reset the Receiver";
+  runningText += "            /_RESET - Reset the Receiver";
   runningText += "\n";
   runningText += "            /help - Show available commands";
   runningText += "\n";
@@ -1560,97 +1560,40 @@ String resolveRedirect(const char *url)
 }
 
 
-
-
-void testURL(const String &url)
-{
-    WiFiClientSecure client;
-    client.setInsecure();
-
-    HTTPClient http;
-
-    if (!http.begin(client, url))
-    {
-        Serial.println("HTTP begin failed");
-        return;
-    }
-
-    const char *headerKeys[] = {"Location"};
-    http.collectHeaders(headerKeys, 1);
-
-    int code = http.GET();
-
-    Serial.printf("\nURL: %s\n", url.c_str());
-    Serial.printf("HTTP Response Code = %d\n", code);
-
-    if (http.hasHeader("Location"))
-    {
-        Serial.print("Location: ");
-        Serial.println(http.header("Location"));
-    }
-
-    http.end();
-}
-
 // OTA update function
 void performOTA()
 {
-  testURL(firmwareURL);
-  //testURL("https://github.com/GilboaCode/Gilboa_Water_Temp/releases/download/v1.3.01/firmware.bin");
-
   Serial.println("\nStarting OTA update...");
   telegramUpdateFailedFlag=false; // Clear update failed flag before starting OTA
   WiFiClientSecure client;
-
-
-
 
   client.setInsecure();
   httpUpdate.rebootOnUpdate(true);
   httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
-/*
-  String downloadURL = resolveRedirect(firmwareURL);
-
-  if (downloadURL.length() == 0)
-  {
-  Serial.println("Unable to resolve redirect.");
-  return;
-  }
-
-  Serial.println("Downloading from:");
-  Serial.println(downloadURL);
-
-  WiFiClientSecure client;
-  client.setInsecure();
-
+  Serial.printf("Downloading: %s\n", firmwareURL);
   t_httpUpdate_return result =
-  httpUpdate.update(client, downloadURL);
-*/
-t_httpUpdate_return result =
     httpUpdate.update(client, firmwareURL);
-
-
 
   switch (result)
   {
   case HTTP_UPDATE_FAILED:
-  Serial.printf("Update failed. Error (%d): %s\n",
-  httpUpdate.getLastError(),
-  httpUpdate.getLastErrorString().c_str());
-  telegramUpdateFailedFlag = true;
-  break;
+    Serial.printf("Update failed. Error (%d): %s\n",
+    httpUpdate.getLastError(),
+    httpUpdate.getLastErrorString().c_str());
+    telegramUpdateFailedFlag = true;
+    break;
 
   case HTTP_UPDATE_NO_UPDATES:
-  Serial.println("No update available.");
-  break;
+    Serial.println("No update available.");
+    break;
 
   case HTTP_UPDATE_OK:
-  // Never reached.
-  // The ESP automatically reboots.
-  Serial.println("Update successful.");
-  break;
-}
+    // Never reached.
+    // The ESP automatically reboots.
+    Serial.println("Update successful.");
+    break;
+  }
 }
 
 // Telegram Bot - Handle incoming messages
@@ -1675,8 +1618,8 @@ void handleNewMessages(int numNewMessages)
     if (text == "/ota") command_ota(chat_id,text);
     if (text == "/debug-on") command_debug_on (chat_id,text);
     if (text == "/debug-off") command_debug_off (chat_id,text);
-    if (text == "/@UPDATE@") command_update(chat_id,text);
-    if (text == "/@RESET@") command_reset(chat_id,text);
+    if (text == "/_UPDATE") command_update(chat_id,text);
+    if (text == "/_RESET") command_reset(chat_id,text);
     if (text == "/superhelp") command_superhelp(chat_id,text);
   }
 }
