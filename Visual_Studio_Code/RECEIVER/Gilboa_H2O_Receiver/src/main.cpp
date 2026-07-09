@@ -1,3 +1,15 @@
+// Receiver -- V1.3.02
+//  * Added code to monitor the timing of the "D" packet from the Sender to implement a watchdog. 
+//    When the Sender wakes up it will send a "D" packet to the Receiver first, before turning on the aux 3 volts that powers up the 1-wire board.
+//    If the Receiver does not receive a "D" packet from the Sender within 60 minutes, it will assume that the Sender is not 
+//    functioning and will send an alert to the operator via email (if configured).
+//    This will determine if the loss of temperature readings is due to a failure of the 1-wire board or a failure of the Sender itself.
+//    A flag is also added to signify the the Receiver has seen the Sender at least one time to handle the power up sequence of the Receiver and Sender.
+//    This flag is used to prevent false alerts on the first boot of the Receiver when the Sender has not yet sent a "D" packet.
+//    The function of this change is to determine if no t/c data is due to flooded t/c tube or an Sender ESP32 problem.
+//    There is a disable flag to disable the watchdog if the operator does not want to use this feature. 
+//    The disable flag is settable by the operator and is settable in the Telegram page.
+//
 // Receiver -- V1.3.01
 //  * Modified the location of the firmware.bin to be in the "latest" folder of the GitHub repository to allow for future versioning of the firmware.
 //
@@ -74,7 +86,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.01"
+#define receiver_version "v1.3.02"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -191,6 +203,16 @@ bool bottomWaterAlertSent = false; // true = alert already sent for bottom senso
 // Timer to track running time since last packet
 unsigned long runningTimer = 0;
 int minCounter = 0;
+
+// Variable to handle watchdog of Sender ESP32 to determine if the Sender is alive and functioning properly
+// When a "D" packet is received move the runningDataPacketTimer to previousDataPacketTime and runningDataPacketTimer=0. 
+// and save millis() in lastDataPacketTime. 
+bool senderSeenFlag = false; // Flag to indicate if the Sender has been seen at least once
+unsigned long lastDataPacketTime = 0.0; // Real time of the last "D" packet received from the Sender 
+unsigned long previousDataPacketTime = 0.0; // Previous measuredtime between "D" packet received from the Sender 
+unsigned long runningDataPacketTimer = 0; // Active running timer for "D" packets from the Sender in minutes
+bool senderFailedFlag = false; // Flag to indicate if the Sender has failed to send a "D" packet within the timeout period
+bool watchdogEnableFlag = false; // Flag to indicate if the watchdog is enabled by the operator via Telegram bot command
 
 // Flag to send variables even on no change (startup)
 bool resetVariablesFlag = false;
@@ -331,6 +353,7 @@ void loadOperatorVars() {
   aux_sleep_minutes = prefs.getInt("aux_sleep", 0);
   OLED_flag_from_receiver = prefs.getBool("oled_flag", false);
   debug_flag_from_receiver = prefs.getBool("debug_flag", false);
+  watchdogEnableFlag = prefs.getBool("watchdog_enabled", true);
   prefs.end();
 
   // Clamp aux_sleep_minutes
@@ -351,6 +374,7 @@ void saveOperatorVars() {
   prefs.putInt("aux_sleep", aux_sleep_minutes);
   prefs.putBool("oled_flag", OLED_flag_from_receiver);
   prefs.putBool("debug_flag", debug_flag_from_receiver);
+  prefs.putBool("watchdog_enabled", watchdogEnableFlag);
   prefs.end();
   Serial.println("Operator variables saved to NVS");
 }
@@ -1306,38 +1330,32 @@ void command_help (String chat_id, String text){
 void command_superhelp (String chat_id, String text){
   String runningText  = "Commands:";
   runningText += "\n";
-  runningText += " /status - Status of Receiver and Sender";
+  runningText += " /status    - Status of Receiver/Sender";
   runningText += "\n";
-  runningText += " /rom - ROM assignments";
+  runningText += " /rom       - ROM assignments";
   runningText += "\n";
-  runningText += " /debug-on - Sender Debug mode on(1 min update time)";
+  runningText += " /debug-on  - Sender Debug mode on";
   runningText += "\n";
   runningText += " /debug-off - Sender Debug mode off";
   runningText += "\n";
-  runningText += " /ota - Receiver OTA information";  
+  runningText += " /WDT-on    - Watchdog mode on";
   runningText += "\n";
-  runningText += " /_UPDATE - Update Receiver firmware";
+  runningText += " /WDT-off   - Watchdog mode off";
   runningText += "\n";
-  runningText += " /_RESET - Receiver Reset";
+  runningText += " /ota       - Receiver OTA information";  
   runningText += "\n";
-  runningText += " /help - Available commands";
+  runningText += " /_UPDATE   - Update Receiver firmware";
   runningText += "\n";
-  runningText += " /superhelp - Super User commands";
+  runningText += " /_RESET    - Receiver Reset";
+  runningText += "\n";
+  runningText += " /help      - Available commands";
+  runningText += "\n";
+  runningText += " /superhelp - SuperUser commands";
   bot.sendMessage(chat_id,runningText,"");
 }
 
 
 //  /status command
-//      Receiver IP address
-//      Sender Temperature data (Air Temp + every 10 ft if detected)
-//      Sender Battery Voltage
-//      Sender Version
-//      Receiver Version
-//      Water detection status at top and bottom sensors
-//      HTTP Status Code of last POST request to postUrl
-//      Sleep timer status (running time / set sleep time for sender)
-//      Display Mode of Sender (OLED Active)
-//      Debug Mode of Sender
 void command_status (String chat_id,String text) {
   String runningText = "Receiver IP Address: " ; 
   runningText +=  WiFi.localIP().toString();
@@ -1353,19 +1371,29 @@ void command_status (String chat_id,String text) {
     runningText += String(temperatures[i], 1) ;
     }
   }
-  runningText += "\nSender Batt: " ;
+  runningText += "\n\nSender Batt: " ;
   runningText += lastSenderBatt ;
   runningText += " v\nSender Ver: " ;
   runningText += SenderVersion ;
   runningText += "\nSender CPU Temp: " ;
   runningText += Sender_temp_farenheit ;
   runningText += " °F" ;  
-  runningText += "\nReceiver Ver: " ;
+  runningText += "\nSender WDT: ";
+  runningText += String(runningDataPacketTimer);
+  runningText += " / ";
+  runningText += String(previousDataPacketTime);
+  runningText += "\nSender WDT Enabled: ";
+  runningText += (watchdogEnableFlag ? "Yes" : "No");
+  runningText += "\nSleep Timer: " ;
+  runningText += String(runningTimer) ;
+  runningText += " / " ;
+  runningText += String(sleep_time_for_sender);
+  runningText += "\n\nReceiver Ver: " ;
   runningText += receiver_version ;
   runningText += "\nReceiver CPU Temp: " ;
   runningText += String(Receiver_temp_farenheit, 1) ;
   runningText += " °F" ;
-  runningText += "\nWater L: " ;
+  runningText += "\n\nWater L: " ;
   String tempstr = String(water_bottom_detected) ;
   tempstr.toLowerCase();
   runningText += tempstr ;
@@ -1373,13 +1401,9 @@ void command_status (String chat_id,String text) {
   tempstr =String(water_top_detected);
   tempstr.toLowerCase();
   runningText += tempstr ;
-  runningText += "\nHTTP POST: " ;
+  runningText += "\n\nHTTP POST: " ;
   runningText += String(httpCode);
-  runningText += "\nSleep Timer: " ;
-  runningText += String(runningTimer) ;
-  runningText += "/" ;
-  runningText += String(sleep_time_for_sender);
-  runningText += "\nOLED Active: " ;
+  runningText += "\n\nOLED Active: " ;
   runningText += (OLED_flag_from_receiver ? "On" : "Off");
   runningText += "\nDebug Mode: " ;
   runningText += (debug_flag_from_receiver ? "On" : "Off");
@@ -1462,6 +1486,19 @@ void command_rom( String chat_id, String text){
   bot.sendMessage(chat_id, runningText, "");
 }
 
+// Command WDT-on, Turn on the Watchdog timer of the Sender
+void command_WDT_on (String chat_id, String text) {
+  watchdogEnableFlag = true;
+  saveOperatorVars(); // Save the updated watchdogEnableFlag to EEPROM
+  bot.sendMessage(chat_id, "Sender Watchdog timer turned ON", "");
+}
+
+// Command WDT-off, Turn off the Watchdog timer of the Sender
+void command_WDT_off (String chat_id, String text) {
+  watchdogEnableFlag = false;
+  saveOperatorVars(); // Save the updated watchdogEnableFlag to EEPROM
+  bot.sendMessage(chat_id, "Sender Watchdog timer turned OFF", "");
+} 
 
 // Print partition information to Serial Monitor
 void printOTAInfo()
@@ -1618,6 +1655,8 @@ void handleNewMessages(int numNewMessages)
     if (text == "/ota") command_ota(chat_id,text);
     if (text == "/debug-on") command_debug_on (chat_id,text);
     if (text == "/debug-off") command_debug_off (chat_id,text);
+    if (text == "/WDT-on") command_WDT_on (chat_id,text);
+    if (text == "/WDT-off") command_WDT_off (chat_id,text);
     if (text == "/_UPDATE") command_update(chat_id,text);
     if (text == "/_RESET") command_reset(chat_id,text);
     if (text == "/superhelp") command_superhelp(chat_id,text);
@@ -1860,6 +1899,13 @@ void ProcessTask(void *pvParameters){
           lastRssiStr = String(LoRa.getRSSI());
           runningTimer = 0; // Reset running timer on new packet
           lastSenderState = "Awake";
+
+          // Update the last data packet time and previous data packet time
+          senderSeenFlag = true; // Mark that the sender has been seen
+          lastDataPacketTime = millis();
+          previousDataPacketTime = runningDataPacketTimer;
+          runningDataPacketTimer = 0; // Reset running timer on new packet
+          senderFailedFlag = false; // Reset sender failed flag on new packet
         }
      }
 
@@ -1955,6 +2001,7 @@ xTaskCreatePinnedToCore(
 
   topWaterAlertSent = false; // Reset alert flag on startup
   bottomWaterAlertSent = false; // Reset alert flag on startup
+  senderSeenFlag = false; // Reset sender seen flag on startup
 }
 
 // === LOOP ===
@@ -2008,7 +2055,17 @@ void loop() {
   if (millis() - minCounter > 30000) {
     minCounter = millis() ;
     runningTimer = (millis() - lastPacketTime)/60000;
+    runningDataPacketTimer = (millis() - lastDataPacketTime)/60000;
   }
 
+  // Test if Sender has failed to send data for more than 60 minutes
+  if (watchdogEnableFlag == true){
+    if (runningDataPacketTimer > 60 && senderSeenFlag == true && senderFailedFlag == false) {
+      senderFailedFlag = true;
+      Serial.println("Sender has failed to send data for more than 60 minutes");
+      String alertDetails = "Sender has failed to send data for more than 60 minutes";
+      sendEmailAlert("Sender Failure Alert", alertDetails);
+    }
+  }
   delay(100);
 }

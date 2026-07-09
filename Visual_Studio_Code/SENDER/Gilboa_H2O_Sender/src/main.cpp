@@ -1,3 +1,11 @@
+// Sender - v1.2.03
+//  * Modified the sequence of the command from the Sender to the Receiver to implement a watchdog. The Receiver will use this
+//    to indicate that the Sender is alive regardless of whether it is transmitting t/c data. 
+//    When the Sender wakes up it will send a "D" packet to the Receiver first, before turning on the aux 3 volts that powers up the 1-wire board.
+//    If the Receiver does not receive a "D" packet from the Sender within 2 minutes, it will assume that the Sender is not 
+//    functioning and will send an alert to the operator via email (if configured).
+//    This will determine if the loss of temperature readings is due to a failure of the 1-wire board or a failure of the Sender itself.
+//
 // Sender - V1.2.02
 //  * Added Sender CPU temperature reading and transmission to Receiver on every cycle, displayed on 
 //    OLED and sent to Receiver for display on web page and OLED)
@@ -37,7 +45,7 @@
 // ONLY enter sleep AFTER all readings have been sent
 //
 
-#define sender_version "v1.2.02"
+#define sender_version "v1.2.03"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -109,6 +117,7 @@ uint8_t ds2413Rom[8];                 // Single DS2413 water detect ROM
 bool hasDS2413 = false;               // Flag: do we have a DS2413?
 
 float Sender_temp_farenheit = 0.0f;   // Sender CPU temperature in Fahrenheit
+float batteryV = 0.0f;                        // Battery voltage
 
 float temperatures[14];
 String water_bottom_detected = "N/A"; // "N/A", "Y" or "N" to indicate if water is detected at the bottom sensor
@@ -248,6 +257,27 @@ void updateOledActiveState() {
   }
 }
 
+void sendDataPacket(){
+  batteryV = readBatteryVoltage();    // Read battery voltage
+  // Read CPU temperature
+  float temp_celsius = temperatureRead();
+  Sender_temp_farenheit = (temp_celsius * 9.0/5.0) + 32.0;
+  Serial.printf("Sender CPU Temp: %.1f °F\n", Sender_temp_farenheit);
+
+  // Send Data packet
+  String sendPacket = "D," + String(batteryV, 2) + "," + String(sender_version) + "," + String(SLEEP_MINUTES) 
+          + "," + String(aux_sleep_minutes) + "," + String(OLED_flag_from_receiver) + "," + String(debug_flag_from_receiver)
+          + "," + String(water_bottom_detected) + "," + String(water_top_detected) + "," + String(Sender_temp_farenheit, 1);
+  sendPacket.toUpperCase();
+//  LoRa.startReceive();
+  int state = LoRa.transmit(sendPacket);
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(sendPacket);
+  } else {
+    Serial.printf("TX failed on Data packet (error: %d)\n", state);
+  }
+}
+
 // Read and transmit ALL probes immediately on wake
 void readAndTransmitAllProbes() {
   if (allReadingsSent) return;
@@ -260,11 +290,6 @@ void readAndTransmitAllProbes() {
     ds248x.OneWireWriteByte(DS18B20_CMD_CONVERT_T);
   }
 
-  float batteryV = readBatteryVoltage();    // Read battery voltage
-  // Read CPU temperature
-  float temp_celsius = temperatureRead();
-  Sender_temp_farenheit = (temp_celsius * 9.0/5.0) + 32.0;
-  Serial.printf("Sender CPU Temp: %.1f °F\n", Sender_temp_farenheit);
   delay(750);  // Wait for all to convert
 
 // Handle OLED display
@@ -281,7 +306,7 @@ void readAndTransmitAllProbes() {
     u8g2.drawStr(0, 60, ("Aux Sleep: " + String(aux_sleep_minutes) + " min").c_str());
 
     u8g2.sendBuffer();
-    }
+  }
 
 
   // Read and transmit each probe immediately
@@ -328,31 +353,19 @@ if (hasDS2413) {
   Serial.println("No DS2413 water detector found");
 }
 
-  // Finally, send Data packet
-  String sendPacket = "D," + String(batteryV, 2) + "," + String(sender_version) + "," + String(SLEEP_MINUTES) 
-          + "," + String(aux_sleep_minutes) + "," + String(OLED_flag_from_receiver) + "," + String(debug_flag_from_receiver)
-          + "," + String(water_bottom_detected) + "," + String(water_top_detected) + "," + String(Sender_temp_farenheit, 1);
-  sendPacket.toUpperCase();
-//  LoRa.startReceive();
-  int state = LoRa.transmit(sendPacket);
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println(sendPacket);
-  } else {
-    Serial.printf("TX failed on Data packet (error: %d)\n", state);
-  }
-  delay(delayBetweenPackets); // Short delay between packets
+delay(delayBetweenPackets); // Short delay between packets
 
 // Send packet to denote all readings sent  
-  sendPacket =  "C"; // Complete packet indicator;
-  state = LoRa.transmit(sendPacket);
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println(sendPacket);
-  } else {
-    Serial.printf("TX failed on C packet (error: %d)\n", state);
-  }
-  delay(delayBetweenPackets); // Short delay between packets
+String sendPacket =  "C"; // Complete packet indicator;
+int state = LoRa.transmit(sendPacket);
+if (state == RADIOLIB_ERR_NONE) {
+  Serial.println(sendPacket);
+} else {
+  Serial.printf("TX failed on C packet (error: %d)\n", state);
+}
+delay(delayBetweenPackets); // Short delay between packets
 
-  allReadingsSent = true;
+allReadingsSent = true;
   Serial.println(">>> ALL READINGS SENT - READY FOR SLEEP <<<");
 }
 
@@ -456,8 +469,6 @@ void exitSleep() {
       break;
   }
 
-  ds2484_power_on();
-  delay(10);
 
   cycleStartTime = millis();
   oledCurrentlyActive = true;  // Force check
@@ -587,6 +598,7 @@ void loop() {
     justWokeUp = false;
     return;
   }
+ 
   unsigned long now = millis();
 
   // Handle the WiFi access point for OTA updates
@@ -602,6 +614,15 @@ void loop() {
 
 
   if (inSleepMode) { delay(100); return; }
+
+  Serial.print ("Sending Data Packet to Receiver... \n");
+
+  sendDataPacket(); // Send Data Packet to Receiver
+  delay (2000);  // Wait 2 seconds before turning on power to the 1-wire board
+  Serial.println ("Turning on power to 1-wire board...\n");
+
+  ds2484_power_on(); // Turn on power to the 1-wire board
+  delay(10);
 
   // Read and transmit all probes
   readAndTransmitAllProbes();
