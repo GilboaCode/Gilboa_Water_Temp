@@ -477,16 +477,38 @@ void exitSleep() {
 
 // Debug OTA mode - start WiFi access point for OTA updates
 void OTA_debug_mode() { 
+  Serial.printf("Current WiFi mode = %d\n", WiFi.getMode());
   Serial.println("Debug mode active - starting WiFi access point for OTA updates");
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(ssid, password);
   delay(1000);
+
   IPAddress IP = IPAddress(192, 168, 4, 2);
+  IPAddress Gateway(192,168,4,2);
   IPAddress NMask = IPAddress(255, 255, 255, 0);
-  WiFi.softAPConfig(IP, IP, NMask);
+
+  WiFi.softAPConfig(IP, Gateway, NMask);
+if (!WiFi.softAP(ssid, password)) {
+    Serial.println("SoftAP failed!");
+    return;
+}
   IPAddress myIP = WiFi.softAPIP();
   Serial.print("Access Point IP address: ");
   Serial.println(myIP);
+
+
+  bool cfg = WiFi.softAPConfig(IP, Gateway, NMask);
+  Serial.printf("Config = %d\n", cfg);
+
+  bool ap = WiFi.softAP(ssid, password);
+  Serial.printf("AP started = %d\n", ap);
+
+  Serial.print("IP = ");
+  Serial.println(WiFi.softAPIP());
+
+  Serial.print("SSID = ");
+  Serial.println(WiFi.softAPSSID());
+
+
   // SETUP YOUR WEB OWN ENTRY POINTS 
   server.on("/myurl", HTTP_GET,[]() {
     server.sendHeader("Connection", "close");
@@ -606,6 +628,7 @@ void loop() {
     hardwareDebugMode = true;
   /* HANDLE UPDATE REQUESTS */
     server.handleClient();  
+    Serial.println("Debug mode active - WiFi access point for OTA updates running");
   }else {
     hardwareDebugMode = false;
   }
