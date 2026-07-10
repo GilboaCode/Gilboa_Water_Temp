@@ -9,6 +9,8 @@
 //    The function of this change is to determine if no t/c data is due to flooded t/c tube or an Sender ESP32 problem.
 //    There is a disable flag to disable the watchdog if the operator does not want to use this feature. 
 //    The disable flag is settable by the operator and is settable in the Telegram page.
+//  * Changed the name of the GitHub download file to Receiver_firmware.bin to distinguish it from the 
+//    Sender_firmware.bin file. The Receiver_firmware.bin file is in the "latest" folder of the GitHub repository.
 //
 // Receiver -- V1.3.01
 //  * Modified the location of the firmware.bin to be in the "latest" folder of the GitHub repository to allow for future versioning of the firmware.
@@ -252,7 +254,7 @@ String Sender_temp_farenheit ;
 bool telegramResetFlag = false; // Flag to indicate if the /reset command was received from the Telegram bot
 bool telegramUpdateFlag = false; // Flag to indicate if the /update command was received from the Telegram bot
 bool telegramUpdateFailedFlag = false; // Flag to indicate if the /update command failed
-const char* firmwareURL ="https://github.com/GilboaCode/Gilboa_Water_Temp/releases/latest/download/firmware.bin";
+const char* firmwareURL ="https://github.com/GilboaCode/Gilboa_Water_Temp/releases/latest/download/Receiver_firmware.bin";
 bool updateStarted = false;
 
 
