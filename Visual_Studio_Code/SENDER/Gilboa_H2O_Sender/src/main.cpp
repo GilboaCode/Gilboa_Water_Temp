@@ -1,3 +1,11 @@
+// Sender - v1.2.04
+//  * Fixed the sending of the "D" packet to the Receiver before turning on the aux 3 volts that powers up the 1-wire board. 
+//    There was another power up call before the "D" command was sent in the Setup.
+//  * Added a LORA_fail_flag and one_wire_fail_flag on a failure to init the LORA or the DS2484. This prevents
+//    Sending out packets to the Receiver for the remaining time of the sleep cycle, where it will try to communicate again.
+//  * Split the "D" packet so as not to send the water detector status when the one-wire is not powered up.
+//  * Added the "W" packet for the water detectors.
+//
 // Sender - v1.2.03
 //  * Modified the sequence of the command from the Sender to the Receiver to implement a watchdog. The Receiver will use this
 //    to indicate that the Sender is alive regardless of whether it is transmitting t/c data. 
@@ -132,7 +140,7 @@ const unsigned long MAX_WAIT_MS = 2000; // Max wait time for receiver responce
 const int SLEEP_MINUTES = 30; //Default Sleep time between readings
 
 // === RTC MEMORY VARIABLES (survive deep sleep) ===
-RTC_DATA_ATTR int     aux_sleep_minutes       = 30;   // default only on first boot
+RTC_DATA_ATTR int     aux_sleep_minutes       = 0;   // default only on first boot
 RTC_DATA_ATTR bool    OLED_flag_from_receiver  = false;
 RTC_DATA_ATTR bool    debug_flag_from_receiver = false;
 
@@ -142,6 +150,10 @@ RTC_DATA_ATTR bool    vars_initialized = false;
 bool inSleepMode = false;
 bool justWokeUp = true;
 unsigned long elapsedSeconds;
+
+bool one_wire_setup_complete = false; // 1st pass flag for 1-wire setup
+bool one_wire_fail_flag = false; // 1-wire setup fail flag
+bool LORA_fail_flag = false; // LoRa setup fail flag
 
 String lastRssiStr = "N/A";
 
@@ -267,19 +279,21 @@ void sendDataPacket(){
   // Send Data packet
   String sendPacket = "D," + String(batteryV, 2) + "," + String(sender_version) + "," + String(SLEEP_MINUTES) 
           + "," + String(aux_sleep_minutes) + "," + String(OLED_flag_from_receiver) + "," + String(debug_flag_from_receiver)
-          + "," + String(water_bottom_detected) + "," + String(water_top_detected) + "," + String(Sender_temp_farenheit, 1);
+          + "," + String(Sender_temp_farenheit, 1);
   sendPacket.toUpperCase();
-//  LoRa.startReceive();
-  int state = LoRa.transmit(sendPacket);
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println(sendPacket);
-  } else {
-    Serial.printf("TX failed on Data packet (error: %d)\n", state);
+  if (LORA_fail_flag == false){
+    int state = LoRa.transmit(sendPacket);
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(sendPacket);
+    } else {
+      Serial.printf("TX failed on Data packet (error: %d)\n", state);
+    }
   }
 }
 
 // Read and transmit ALL probes immediately on wake
 void readAndTransmitAllProbes() {
+  String sendPacket = "";
   if (allReadingsSent) return;
 
   Serial.println(">>> READING AND TRANSMITTING ALL PROBES NOW <<<");
@@ -292,7 +306,7 @@ void readAndTransmitAllProbes() {
 
   delay(750);  // Wait for all to convert
 
-// Handle OLED display
+  // Handle OLED display
   if (oledCurrentlyActive) {
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_ncenB08_tr);
@@ -321,7 +335,7 @@ void readAndTransmitAllProbes() {
       if (j < 7) romStr += " ";
     }
     romStr.toUpperCase();
-    String sendPacket = romStr + "," + String(temperatures[i], 2);
+    sendPacket = romStr + "," + String(temperatures[i], 2);
     LoRa.startReceive();
     int state = LoRa.transmit(sendPacket);
     if (state == RADIOLIB_ERR_NONE) {
@@ -331,9 +345,9 @@ void readAndTransmitAllProbes() {
     }
     delay(delayBetweenPackets); // Short delay between packets
   }
-  
-// Read the water detector (only one DS2413)
-if (hasDS2413) {
+
+  // Read the water detector (only one DS2413)
+  if (hasDS2413) {
   uint8_t pioLogic;
   if (readDS2413PIO(ds2413Rom, pioLogic)) {
     // Assuming low = water detected (conductive path pulls to ground)
@@ -347,30 +361,43 @@ if (hasDS2413) {
     water_bottom_detected = "ERR";
     Serial.println("DS2413 read failed");
   }
-} else {
-  water_top_detected    = "N/A";
-  water_bottom_detected = "N/A";
-  Serial.println("No DS2413 water detector found");
-}
+  } else {
+    water_top_detected    = "N/A";
+    water_bottom_detected = "N/A";
+    Serial.println("No DS2413 water detector found");
+  }
+  delay(delayBetweenPackets); // Short delay between packets
 
-delay(delayBetweenPackets); // Short delay between packets
+  // Send the Water detect flags
+  sendPacket = "W," + String(water_bottom_detected) + "," + String(water_top_detected) ;
+  sendPacket.toUpperCase();
+  if (LORA_fail_flag == false){
+    int state = LoRa.transmit(sendPacket);
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(sendPacket);
+    } else {
+      Serial.printf("TX failed on Water Detect packet (error: %d)\n", state);
+    }
+  }
 
-// Send packet to denote all readings sent  
-String sendPacket =  "C"; // Complete packet indicator;
-int state = LoRa.transmit(sendPacket);
-if (state == RADIOLIB_ERR_NONE) {
+  delay(delayBetweenPackets); // Short delay between packets
+
+  // Send packet to denote all readings sent  
+  sendPacket =  "C"; // Complete packet indicator;
+  int state = LoRa.transmit(sendPacket);
+  if (state == RADIOLIB_ERR_NONE) {
   Serial.println(sendPacket);
-} else {
+  } else {
   Serial.printf("TX failed on C packet (error: %d)\n", state);
-}
-delay(delayBetweenPackets); // Short delay between packets
+  }
+  delay(delayBetweenPackets); // Short delay between packets
 
-allReadingsSent = true;
+  allReadingsSent = true;
   Serial.println(">>> ALL READINGS SENT - READY FOR SLEEP <<<");
 }
 
-// Listen and wait a set time for a "V,xx,yy,zz" packet from receiver
-void receiveVariablesFromReceiver() {
+  // Listen and wait a set time for a "V,xx,yy,zz" packet from receiver
+  void receiveVariablesFromReceiver() {
   unsigned long startWait = millis();
   while (millis() - startWait < MAX_WAIT_MS) {
     String rxPacket;
@@ -519,6 +546,75 @@ if (!WiFi.softAP(ssid, password)) {
     server.begin();
 }
 
+// Initialize the 1-Wire board and check for connected devices, count and identify them.
+void one_wire_setup() {
+  one_wire_fail_flag = false; // Reset the fail flag before attempting setup
+  ds2484_power_on();
+
+  Wire.begin(17, 18);
+  Wire.setClock(100000);
+  Wire1.begin(41, 42);
+  delay(10);
+  if (!ds248x.begin(&Wire1, DS248X_ADDRESS)) {
+    Serial.println("DS2484 init failed!");
+    one_wire_fail_flag = true; // Set the fail flag to indicate that the 1-wire setup failed
+    return;
+  }
+  Wire1.setClock(400000);
+// Count the number of devices on the 1-wire bus and identify them. Store the ROMs of the sensors in the roms array and count them in
+  deviceCount = 0;
+  hasDS2413 = false;
+
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    if (ds248x.OneWireReset()) {
+      ds248x.OneWireWriteByte(DS18B20_CMD_SEARCH_ROM);
+      while (ds248x.OneWireSearch(roms[deviceCount]) && deviceCount < 15) {
+
+        Serial.print("Found device with ROM: ");
+        for (int j = 0; j < 8; j++) {
+          Serial.printf("%02X ", roms[deviceCount][j]);
+        }
+        Serial.println();
+
+        if (roms[deviceCount][0] == DS18B20_FAMILY_CODE) {
+          deviceCount++;  // only count temp sensors
+        } else if (roms[deviceCount][0] == DS2413_FAMILY_CODE) {
+          // Store the DS2413 ROM (only one expected)
+          memcpy(ds2413Rom, roms[deviceCount], 8);
+          hasDS2413 = true;
+          Serial.println("DS2413 water detector found and stored");
+          // Do NOT increment deviceCount — we don't count it as a temp sensor
+        }
+      }
+      if (deviceCount > 0 || hasDS2413) break;
+    }
+    delay(100);
+  }
+
+  Serial.printf("Found %d DS18B20 sensors\n", deviceCount);
+  if (hasDS2413) {
+    Serial.print("DS2413 ROM: ");
+    for (int j = 0; j < 8; j++) Serial.printf("%02X ", ds2413Rom[j]);
+    Serial.println();
+  }
+}
+
+// Initialize the LoRa module and check for errors. If initialization fails, set the LORA_fail_flag to true.
+void lora_setup() {
+  LORA_fail_flag = false;  
+  int state = LoRa.begin(LORA_FREQ, 125.0, 7, 5, 0x34);
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.printf("LoRa init failed: %d\n", state);
+    LORA_fail_flag = true; // Set the fail flag to indicate that the LoRa setup failed  
+  }else{
+    LoRa.startReceive();
+    lastRssiStr = String(LoRa.getRSSI());
+  }
+}
+
+
+// ************ Setup and Loop ************
+// Setup the 1-wire power up in the 1st pass of the loop after "D" command has been sent.
 void setup() {
   esp_log_level_set("Preferences", ESP_LOG_NONE); 
   Serial.begin(115200);
@@ -533,73 +629,16 @@ void setup() {
   pinMode(OLED_ACTIVE_PIN, INPUT_PULLDOWN); // Set OLED Active pin as input with pull-down
   pinMode (Debug_State_PIN,INPUT_PULLDOWN); // Set Debug State pin as input with pull-down
 
-  ds2484_power_on();
-
   loadOperatorVars(); // Load operator variables from NVS
+  u8g2.begin(); // Initialize the OLED display
 
-  Wire.begin(17, 18);
-  Wire.setClock(100000);
-  u8g2.begin();
-  Wire1.begin(41, 42);
-  if (!ds248x.begin(&Wire1, DS248X_ADDRESS)) {
-    Serial.println("DS2484 init failed!");
-    while (true);
-  }
-  Wire1.setClock(400000);
-
-  int state = LoRa.begin(LORA_FREQ, 125.0, 7, 5, 0x34);
-
-  if (state != RADIOLIB_ERR_NONE) {
-    Serial.printf("LoRa init failed: %d\n", state);
-    while (true);
-  }
+  // Initialize LoRa module
+  lora_setup();
 
   // Handle the WiFi access point for OTA updates
   if (digitalRead(Debug_State_PIN) == HIGH ) {
     OTA_debug_mode();
   }
-
-  LoRa.startReceive();
-
-  // Count the number of devices on the 1-wire bus and identify them. Store the ROMs of the sensors in the roms array and count them in
-  deviceCount = 0;
-  hasDS2413 = false;
-
-for (int attempt = 0; attempt < 3; ++attempt) {
-    if (ds248x.OneWireReset()) {
-      ds248x.OneWireWriteByte(DS18B20_CMD_SEARCH_ROM);
-      while (ds248x.OneWireSearch(roms[deviceCount]) && deviceCount < 15) {
-
-        Serial.print("Found device with ROM: ");
-        for (int j = 0; j < 8; j++) {
-          Serial.printf("%02X ", roms[deviceCount][j]);
-        }
-        Serial.println();
-
-
- if (roms[deviceCount][0] == DS18B20_FAMILY_CODE) {
-        deviceCount++;  // only count temp sensors
-      }
-      else if (roms[deviceCount][0] == DS2413_FAMILY_CODE) {
-        // Store the DS2413 ROM (only one expected)
-        memcpy(ds2413Rom, roms[deviceCount], 8);
-        hasDS2413 = true;
-        Serial.println("DS2413 water detector found and stored");
-        // Do NOT increment deviceCount — we don't count it as a temp sensor
-      }
-    }
-    if (deviceCount > 0 || hasDS2413) break;
-  }
-  delay(100);
-  }
-  Serial.printf("Found %d DS18B20 sensors\n", deviceCount);
-  if (hasDS2413) {
-    Serial.print("DS2413 ROM: ");
-    for (int j = 0; j < 8; j++) Serial.printf("%02X ", ds2413Rom[j]);
-    Serial.println();
-  }
-
-  lastRssiStr = String(LoRa.getRSSI());
 
   cycleStartTime = millis();
   
@@ -607,6 +646,7 @@ for (int attempt = 0; attempt < 3; ++attempt) {
   vars_initialized = true;
 }
 
+// ********************** LOOP
 void loop() {
   bool hardwareDebugMode; 
 
@@ -635,22 +675,32 @@ void loop() {
 
   updateOledActiveState(); // Handle the OLDE Active Switch
 
-
   if (inSleepMode) { delay(100); return; }
 
-  Serial.print ("Sending Data Packet to Receiver... \n");
 
-  sendDataPacket(); // Send Data Packet to Receiver
+  if (LORA_fail_flag == false){
+    Serial.print ("Sending Data Packet to Receiver... \n");
+    sendDataPacket(); // Send Data Packet to Receiver
+  }
   delay (2000);  // Wait 2 seconds before turning on power to the 1-wire board
   Serial.println ("Turning on power to 1-wire board...\n");
 
-  ds2484_power_on(); // Turn on power to the 1-wire board
+  if (one_wire_setup_complete == false) { 
+    one_wire_setup(); // Initialize the 1-wire board and check for connected devices
+    one_wire_setup_complete = true;
+  }
   delay(10);
 
   // Read and transmit all probes
-  readAndTransmitAllProbes();
-  receiveVariablesFromReceiver();
-
+  if (LORA_fail_flag == false  && one_wire_fail_flag == false){
+    Serial.printf("LORA: %s one-wire: %s",  LORA_fail_flag,one_wire_fail_flag);
+    readAndTransmitAllProbes();
+    receiveVariablesFromReceiver();
+  }else{
+    allReadingsSent= true; // Fake out the allReadingSent to start the sleep cycle
+  }
+  
+ 
   // If hardware debug switch is made then skip sleep and stay awake for OTA updates
   if (!hardwareDebugMode) {
     // OK to sleep?
@@ -662,6 +712,7 @@ void loop() {
       return;
     }
   } else {
+    delay (10000); //Delay 10 sec
     allReadingsSent = false; // Reset flag to allow re-reading and transmitting probes when debug mode is exited
   }
   delay(500);

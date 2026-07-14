@@ -1,3 +1,8 @@
+// Receiver -- v1.3.03
+//  * Followed the splitting of the "D" packet from the Sender to "D" excluding water detect and "W" for water detect. 
+//    Correcting the problem of n/a for water detect due to data being sent to receiver before 1-wire power being turned on.
+//  * Added distinction between failed all LORA reception and failed just t/c reception (with messages sent to recipients).
+//
 // Receiver -- V1.3.02
 //  * Added code to monitor the timing of the "D" packet from the Sender to implement a watchdog. 
 //    When the Sender wakes up it will send a "D" packet to the Receiver first, before turning on the aux 3 volts that powers up the 1-wire board.
@@ -88,7 +93,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.02"
+#define receiver_version "v1.3.03"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -213,8 +218,9 @@ bool senderSeenFlag = false; // Flag to indicate if the Sender has been seen at 
 unsigned long lastDataPacketTime = 0.0; // Real time of the last "D" packet received from the Sender 
 unsigned long previousDataPacketTime = 0.0; // Previous measuredtime between "D" packet received from the Sender 
 unsigned long runningDataPacketTimer = 0; // Active running timer for "D" packets from the Sender in minutes
-bool senderFailedFlag = false; // Flag to indicate if the Sender has failed to send a "D" packet within the timeout period
+static bool senderFailedFlag = false; // Flag to indicate if the Sender has failed to send a "D" packet within the timeout period
 bool watchdogEnableFlag = false; // Flag to indicate if the watchdog is enabled by the operator via Telegram bot command
+static bool senderThermocoupleFailFlag; // Flag to indicate no t/c data in 60 min.
 
 // Flag to send variables even on no change (startup)
 bool resetVariablesFlag = false;
@@ -370,7 +376,6 @@ void loadOperatorVars() {
                 aux_sleep_minutes, OLED_flag_from_receiver, debug_flag_from_receiver);
 }
 
-
 void saveOperatorVars() {
   prefs.begin("operator", false);
   prefs.putInt("aux_sleep", aux_sleep_minutes);
@@ -380,6 +385,23 @@ void saveOperatorVars() {
   prefs.end();
   Serial.println("Operator variables saved to NVS");
 }
+
+// === NVS: Load/Save Program retaining variables
+void loadFailVariables (){
+  prefs.begin("Failure", true);
+  senderFailedFlag = prefs.getBool("D_Failed", false);
+  senderThermocoupleFailFlag = prefs.getBool("T_Failed", false);
+  prefs.end();
+}
+
+void saveFailVariables() {
+  prefs.begin("Failure", false);
+  prefs.putBool("D_Failed", senderFailedFlag);
+  prefs.putBool("T_Failed", senderThermocoupleFailFlag);
+  prefs.end();
+  Serial.println("Failure variables saved to NVS");
+}
+
 // === NVS: Load/Save ROM Table ===
 void loadRomTable() {
   if (romTableLoaded) return;
@@ -1689,7 +1711,14 @@ void checkTelegram() {
   }
 }
 
-
+// Clear thermocouple fault flag
+void clearTCFaultFlag(){
+  if (senderThermocoupleFailFlag == true){
+    senderThermocoupleFailFlag = false;
+    saveFailVariables() ;
+  }
+}
+        
 
 // ====================== INTERUPT CALLBACK (ISR) ======================
 // Get actual packet length first (recommended for SX1262)
@@ -1773,14 +1802,10 @@ void LoRaTask(void *pvParameters)
         old_debug_flag_from_receiver = debug_flag_from_receiver;
         resetVariablesFlag = false;  
         
-        
         runningTimer = 0; // Reset running timer on new packet
         lastSenderState = "Awake";
         newPacketReceived = true;
-
-
       }
-
       xQueueSend(loraQueue, &packet, portMAX_DELAY);
     }
     LoRa.startReceive();
@@ -1803,7 +1828,7 @@ void ProcessTask(void *pvParameters){
       // T = Temperature packet, D = Data packet, C = Complete packet
       String command= newPacket.substring (0,1);
       char cm= command.charAt(0);
-      if (cm=='T' || cm=='D' ) {
+      if (cm=='T' || cm=='D' || cm == 'W') {
         int c1 = newPacket.indexOf(',');
         int c2 = newPacket.indexOf(',', c1 + 1);
         int c3 = newPacket.indexOf(',', c2 + 1);
@@ -1844,11 +1869,12 @@ void ProcessTask(void *pvParameters){
           lastRssiStr = String(LoRa.getRSSI());
           lastPacketTime = millis();
           runningTimer = 0; // Reset running timer on new packet
+          clearTCFaultFlag () ; // Clear the TC fault flag
           lastSenderState = "Awake";
         }
         if (cm == 'D') {
           // Serial.println("Data Packet");
-          // Data packet: D,battery voltage,sender_version,SLEEP_MINUTES, OLED_FLAG, DEBUG_FLAG, water_bottom_detected, water_top_detected, Sender CPU temperature
+          // Data packet: D,battery voltage,sender_version,SLEEP_MINUTES, OLED_FLAG, DEBUG_FLAG,Sender CPU temperature
           String battStr = newPacket.substring(c1 + 1, c2);
           SenderVersion = newPacket.substring(c2 + 1, c3);
           String sleepStr = newPacket.substring(c3 + 1, c4);
@@ -1856,14 +1882,8 @@ void ProcessTask(void *pvParameters){
           int tempSleep = newPacket.substring(c4 + 1, c5).toInt();
           bool tempOLED = newPacket.substring(c5 + 1, c6).toInt() != 0;
           bool tempDebug = newPacket.substring(c6 + 1,c7).toInt() != 0;
-          water_bottom_detected = newPacket.substring(c7 + 1,c8);
-          water_top_detected = newPacket.substring(c8 + 1,c9);
-          if (c9 == -1) {
-            Sender_temp_farenheit = "N/A";
-          } else {
-            Sender_temp_farenheit = newPacket.substring(c9 + 1);
-          }
-          Serial.println(Sender_temp_farenheit);
+          Sender_temp_farenheit = newPacket.substring(c7 + 1);
+          //Serial.println(Sender_temp_farenheit);
 
           if (tempSleep == aux_sleep_minutes &&
               tempOLED == OLED_flag_from_receiver &&
@@ -1875,41 +1895,28 @@ void ProcessTask(void *pvParameters){
           }
           lastSenderBatt = battStr;
           lastRssiStr = String(LoRa.getRSSI());
-          /*
-          Serial.println("Data Packet Received:");
-          Serial.print("  Sender Battery: " );
-          Serial.print(  battStr );
-          Serial.println(" V");
-          Serial.print("  Sender Version: " );
-          Serial.println( SenderVersion);
-          Serial.print("  Sleep Minutes: " );
-          Serial.println(  sleepStr);
-          Serial.print("  Aux Sleep Minutes: " );
-          Serial.println(  String(tempSleep));
-          Serial.print("  OLED Flag: " );
-          Serial.println(  String(tempOLED));
-          Serial.print("  Debug Flag: " );
-          Serial.println(  String(tempDebug));
-          Serial.print("  Water Bottom Detected: " );
-          Serial.println( water_bottom_detected);
-          Serial.print("  Water Top Detected: " );
-          Serial.println( water_top_detected);
-          Serial.print("  Sender CPU Temp: " );
-          Serial.println( Sender_temp_farenheit);
-          */
-          lastSenderBatt = battStr;
-          lastRssiStr = String(LoRa.getRSSI());
           runningTimer = 0; // Reset running timer on new packet
           lastSenderState = "Awake";
 
           // Update the last data packet time and previous data packet time
-          senderSeenFlag = true; // Mark that the sender has been seen
+          if (senderSeenFlag == false){
+            senderSeenFlag = true; // Mark that the sender has been seen
+          }
           lastDataPacketTime = millis();
           previousDataPacketTime = runningDataPacketTimer;
           runningDataPacketTimer = 0; // Reset running timer on new packet
-          senderFailedFlag = false; // Reset sender failed flag on new packet
+          if (senderFailedFlag == true){ // Reset sender failed flag on new packet
+            senderFailedFlag = false;
+            saveFailVariables();
+          } 
+        } 
+        if (cm == 'W') {
+          // Water Detector PAcket
+          water_bottom_detected = newPacket.substring(c1 + 1,c2);
+          water_top_detected = newPacket.substring(c2 + 1,c3);
+          clearTCFaultFlag () ; // Clear the TC fault flag
         }
-     }
+      }
 
       if (millis() - lastPacketTime > SLEEP_TIMEOUT_MS && lastPacketTime != 0) {
         if (lastSenderState != "Asleep") {
@@ -1997,6 +2004,7 @@ xTaskCreatePinnedToCore(
   loadOperatorVars(); 
   loadRecipients();  // load multiple recipients
   loadSenderCreds(); // Loaded sender credentials
+  loadFailVariables(); // Load failed communication flags
   resetVariablesFlag = true; // Force sending operator vars on first send
 
   updateOLED();   // Update the OLED display with initial information
@@ -2061,11 +2069,22 @@ void loop() {
   }
 
   // Test if Sender has failed to send data for more than 60 minutes
+  //    senderFailedFlag (NVS) is used to only send failed message once, reset by receiving "D" packet again
   if (watchdogEnableFlag == true){
-    if (runningDataPacketTimer > 60 && senderSeenFlag == true && senderFailedFlag == false) {
+    // Handle loss of all LORA comms
+    if (runningDataPacketTimer > 60  && senderFailedFlag == false) {
       senderFailedFlag = true;
-      Serial.println("Sender has failed to send data for more than 60 minutes");
-      String alertDetails = "Sender has failed to send data for more than 60 minutes";
+      saveFailVariables (); //Save in NVS
+      Serial.println("Sender has failed to send any data for more than 60 minutes");
+      String alertDetails = "Sender has failed to send any data for more than 60 minutes";
+      sendEmailAlert("Sender Failure Alert", alertDetails);
+    }
+    // Handle loss of just thermocouples
+    if (runningTimer > 60 && senderThermocoupleFailFlag == false){
+      senderThermocoupleFailFlag = true;
+      saveFailVariables (); //Save in NVS
+      Serial.println("Sender has failed to send thermocouple data for more than 60 minutes");
+      String alertDetails = "Sender has failed to send thermocouple data for more than 60 minutes";
       sendEmailAlert("Sender Failure Alert", alertDetails);
     }
   }
