@@ -113,6 +113,8 @@ bool oledCurrentlyActive = false;
 // <<< Debug Mode - GPIO 2 - high to stay awake >>>
 #define Debug_Mode_PIN 2  // GPIO pin for Debug Mode Deep Sleep interupt
 #define Debug_State_PIN 7 // GPIO pin to indicate Debug State HIGH=Debug Mode
+bool hardwareDebugMode = false; // Variable of the Hardware value
+
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, 21);
 SX1262 LoRa = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY);
@@ -449,19 +451,30 @@ void readAndTransmitAllProbes() {
 // Enter sleep mode for a specified number of minutes, or 1 minute if debug mode is active
 void enterSleep() {
   int sleepTime;
+  int sleepValue;
   if (inSleepMode) return;
   inSleepMode = true;
-    Serial.printf ("aux_sleep_minutes" " = %d\n", aux_sleep_minutes);
-  sleepTime = SLEEP_MINUTES ;
 
-  if (aux_sleep_minutes > 0) {
-    sleepTime = aux_sleep_minutes;
-  } else {
-    if (digitalRead(Debug_State_PIN) == HIGH || debug_flag_from_receiver == true) {
+  // Checking priority of sleep times, normal (30 min.), aux sleep time (>0 min.),
+  // debug flag from Receiver setpoint (1 min.), and Debug pin on Sender (20 sec)
+  if (hardwareDebugMode == true){
+    sleepTime=20; // 20 seconds
+    Serial.printf(">>> ENTERING %d Seconds SLEEP  <<<\n", sleepTime);
+    sleepValue = sleepTime * 1000000;
+  } else if (aux_sleep_minutes > 0) {
+      sleepTime = aux_sleep_minutes; 
+      Serial.printf(">>> ENTERING %d MIN SLEEP  <<<\n", sleepTime);
+      sleepValue = sleepTime * 60ULL * 1000000;
+  } else if (debug_flag_from_receiver == true) {
       sleepTime = 1;
-    }
+      Serial.printf(">>> ENTERING %d MIN SLEEP  <<<\n", sleepTime);
+      sleepValue = sleepTime * 60ULL * 1000000;
+  } else {
+      sleepTime = SLEEP_MINUTES ;
+      Serial.printf(">>> ENTERING %d MIN SLEEP  <<<\n", sleepTime);
+      sleepValue = sleepTime * 60ULL * 1000000;
   }
-  Serial.printf(">>> ENTERING %d MIN SLEEP  <<<\n", sleepTime);
+  
 
   u8g2.setPowerSave(1);
   oledCurrentlyActive = false;
@@ -473,7 +486,7 @@ void enterSleep() {
   allReadingsSent = false;
 
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_2, 1);  // Configure GPIO 2 for EXT0 wake-up on RISING edge
-  esp_sleep_enable_timer_wakeup(sleepTime * 60ULL * 1000000);
+  esp_sleep_enable_timer_wakeup(sleepValue);
   esp_deep_sleep_start();
 }
 
@@ -648,8 +661,6 @@ void setup() {
 
 // ********************** LOOP
 void loop() {
-  bool hardwareDebugMode; 
-
   if (justWokeUp) {
     if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
       exitSleep();
@@ -660,7 +671,7 @@ void loop() {
     justWokeUp = false;
     return;
   }
- 
+
   unsigned long now = millis();
 
   // Handle the WiFi access point for OTA updates
@@ -691,9 +702,9 @@ void loop() {
   }
   delay(10);
 
+  Serial.printf("LORA_fail_flag: %d, one_wire_fail_flag: %d\n", LORA_fail_flag,one_wire_fail_flag);
   // Read and transmit all probes
   if (LORA_fail_flag == false  && one_wire_fail_flag == false){
-    Serial.printf("LORA: %s one-wire: %s",  LORA_fail_flag,one_wire_fail_flag);
     readAndTransmitAllProbes();
     receiveVariablesFromReceiver();
   }else{
@@ -702,18 +713,14 @@ void loop() {
   
  
   // If hardware debug switch is made then skip sleep and stay awake for OTA updates
-  if (!hardwareDebugMode) {
-    // OK to sleep?
-    if (allReadingsSent) {
-      if(oledCurrentlyActive == true) {
-        delay(5000);  // Wait 5 seconds before sleeping if OLED is ON
-      }
-      enterSleep();
-      return;
+  // OK to sleep?
+  if (allReadingsSent) {
+    if(oledCurrentlyActive == true) {
+      delay(5000);  // Wait 5 seconds before sleeping if OLED is ON
     }
-  } else {
-    delay (10000); //Delay 10 sec
-    allReadingsSent = false; // Reset flag to allow re-reading and transmitting probes when debug mode is exited
+    enterSleep();
+    return;
   }
+
   delay(500);
 }

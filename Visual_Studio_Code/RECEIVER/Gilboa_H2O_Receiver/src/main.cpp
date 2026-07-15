@@ -1389,7 +1389,7 @@ void command_status (String chat_id,String text) {
   runningText += "depth - " ;
   runningText +=  String(depthLabels[i]) ;
   runningText += "  temp - " ;
-  if (temperatures[i] < -100.0) {
+  if (temperatures[i] < -100.0 || temperatures[i] == 0) {
     runningText += "N/A" ;
     } else {
     runningText += String(temperatures[i], 1) ;
@@ -1711,6 +1711,25 @@ void checkTelegram() {
   }
 }
 
+// Clear Sender fault flag
+void clearSenderFaultFlag (){
+  if (senderFailedFlag == true){ // Reset sender failed flag on new packet
+    senderFailedFlag = false;
+    saveFailVariables();
+  }
+}
+
+// Set Sender fault flag
+void setSenderFaultFlag(){
+  senderFailedFlag = true;
+  saveFailVariables (); //Save in NVS
+  // Set at t/c values to "N/A"
+  for (int i = 0; i < 14; i++) temperatures[i] =0 ;
+   Serial.println("Sender has failed to send any data for more than 60 minutes");
+  String alertDetails = "Sender has failed to send any data for more than 60 minutes";
+  sendEmailAlert("Sender Failure Alert", alertDetails);
+}
+
 // Clear thermocouple fault flag
 void clearTCFaultFlag(){
   if (senderThermocoupleFailFlag == true){
@@ -1719,6 +1738,16 @@ void clearTCFaultFlag(){
   }
 }
         
+// Set thermocouple fault flag
+void setTCFaultFlag (){
+    senderThermocoupleFailFlag = true;
+    saveFailVariables() ;  //Save in NVS
+    // Set at t/c values to "N/A"
+    for (int i = 0; i < 14; i++) temperatures[i] =0 ;
+    Serial.println("Sender has failed to send thermocouple data for more than 60 minutes");
+    String alertDetails = "Sender has failed to send thermocouple data for more than 60 minutes";
+    sendEmailAlert("Sender Failure Alert", alertDetails);
+}
 
 // ====================== INTERUPT CALLBACK (ISR) ======================
 // Get actual packet length first (recommended for SX1262)
@@ -1905,10 +1934,7 @@ void ProcessTask(void *pvParameters){
           lastDataPacketTime = millis();
           previousDataPacketTime = runningDataPacketTimer;
           runningDataPacketTimer = 0; // Reset running timer on new packet
-          if (senderFailedFlag == true){ // Reset sender failed flag on new packet
-            senderFailedFlag = false;
-            saveFailVariables();
-          } 
+          clearSenderFaultFlag();
         } 
         if (cm == 'W') {
           // Water Detector PAcket
@@ -2073,19 +2099,11 @@ void loop() {
   if (watchdogEnableFlag == true){
     // Handle loss of all LORA comms
     if (runningDataPacketTimer > 60  && senderFailedFlag == false) {
-      senderFailedFlag = true;
-      saveFailVariables (); //Save in NVS
-      Serial.println("Sender has failed to send any data for more than 60 minutes");
-      String alertDetails = "Sender has failed to send any data for more than 60 minutes";
-      sendEmailAlert("Sender Failure Alert", alertDetails);
+      setSenderFaultFlag();
     }
     // Handle loss of just thermocouples
     if (runningTimer > 60 && senderThermocoupleFailFlag == false){
-      senderThermocoupleFailFlag = true;
-      saveFailVariables (); //Save in NVS
-      Serial.println("Sender has failed to send thermocouple data for more than 60 minutes");
-      String alertDetails = "Sender has failed to send thermocouple data for more than 60 minutes";
-      sendEmailAlert("Sender Failure Alert", alertDetails);
+      setTCFaultFlag (); // Set the flag, show t/c values as "N/A" and send alert to addresses on list
     }
   }
   delay(100);
