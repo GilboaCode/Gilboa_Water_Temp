@@ -187,7 +187,6 @@ String SenderSleepTime = "N/A";
 String ReceiverVersion = receiver_version;
 
 String lastSenderBatt = "N/A";
-String lastSenderState = "Awake";
 String lastRssiStr = "N/A";
 unsigned long lastPacketTime = 0;
 #define SLEEP_TIMEOUT_MS 20000
@@ -1843,7 +1842,6 @@ void LoRaTask(void *pvParameters)
         resetVariablesFlag = false;  
         
         runningTimer = 0; // Reset running timer on new packet
-        lastSenderState = "Awake";
         newPacketReceived = true;
       }
       xQueueSend(loraQueue, &packet, portMAX_DELAY);
@@ -1910,7 +1908,6 @@ void ProcessTask(void *pvParameters){
           lastPacketTime = millis();
           runningTimer = 0; // Reset running timer on new packet
           clearTCFaultFlag () ; // Clear the TC fault flag
-          lastSenderState = "Awake";
         }
         if (cm == 'D') {
           // Serial.println("Data Packet");
@@ -1936,7 +1933,6 @@ void ProcessTask(void *pvParameters){
           lastSenderBatt = battStr;
           lastRssiStr = String(LoRa.getRSSI());
           runningTimer = 0; // Reset running timer on new packet
-          lastSenderState = "Awake";
 
           // Update the last data packet time and previous data packet time
           if (senderSeenFlag == false){
@@ -1952,13 +1948,6 @@ void ProcessTask(void *pvParameters){
           water_bottom_detected = newPacket.substring(c1 + 1,c2);
           water_top_detected = newPacket.substring(c2 + 1,c3);
           clearTCFaultFlag () ; // Clear the TC fault flag
-        }
-      }
-
-      if (millis() - lastPacketTime > SLEEP_TIMEOUT_MS && lastPacketTime != 0) {
-        if (lastSenderState != "Asleep") {
-          lastSenderState = "Asleep";
-          Serial.println("Sender asleep");
         }
       }
     }
