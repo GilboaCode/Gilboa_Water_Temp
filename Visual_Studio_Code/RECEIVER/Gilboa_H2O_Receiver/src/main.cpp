@@ -2,6 +2,7 @@
 //  * Followed the splitting of the "D" packet from the Sender to "D" excluding water detect and "W" for water detect. 
 //    Correcting the problem of n/a for water detect due to data being sent to receiver before 1-wire power being turned on.
 //  * Added distinction between failed all LORA reception and failed just t/c reception (with messages sent to recipients).
+//  * Instead of sending seperate e-mails out, code has been changed to send one e-mail with all listed recipients in as "cc"ed.
 //
 // Receiver -- V1.3.02
 //  * Added code to monitor the timing of the "D" packet from the Sender to implement a watchdog. 
@@ -1273,69 +1274,79 @@ void sendEmailAlert(String emailsubject, String emailmessage) {
     return;
   }
 
+  bool foundRecipient = false; // Clear valid recipient found flag
   for (int i = 0; i < 6; i++) {
     if (recipient_emails[i].length() > 5 && recipient_emails[i].indexOf("@") > 0) {
-      Serial.printf("Added email recipient: %s\n", recipient_emails[i].c_str());
+      foundRecipient = true;
+    }
+  }
 
-      /*  Set the network reconnection option */
-      MailClient.networkReconnect(true);
-      /** Enable the debug via Serial port
-       * 0 for no debugging
-       * 1 for basic level debugging
-       *
-       * Debug port can be changed via ESP_MAIL_DEFAULT_DEBUG_PORT in ESP_Mail_FS.h
-       */
-      smtp.debug(1);
-      /* Set the callback function to get the sending results */
-      smtp.callback(smtpCallback);
-    
-      ESP_Mail_Session session;
-      session.server.host_name = SMTP_server ;
-      session.server.port = SMTP_Port;
-      session.login.email = sender_email;
-      session.login.password = sender_password;
-      session.login.user_domain = "";
+  if (foundRecipient == true) {
+    /*  Set the network reconnection option */
+    MailClient.networkReconnect(true);
+    /** Enable the debug via Serial port
+     * 0 for no debugging
+     * 1 for basic level debugging
+     *
+     * Debug port can be changed via ESP_MAIL_DEFAULT_DEBUG_PORT in ESP_Mail_FS.h
+     */
+    smtp.debug(1);
+    /* Set the callback function to get the sending results */
+    smtp.callback(smtpCallback);
+  
+    ESP_Mail_Session session;
+    session.server.host_name = SMTP_server ;
+    session.server.port = SMTP_Port;
+    session.login.email = sender_email;
+    session.login.password = sender_password;
+    session.login.user_domain = "";
 
-      // Set the session NTP config time
-      session.time.ntp_server = F("pool.ntp.org,time.nist.gov");
-      session.time.gmt_offset = 5;
-      session.time.day_light_offset = 0;
+    // Set the session NTP config time
+    session.time.ntp_server = F("pool.ntp.org,time.nist.gov");
+    session.time.gmt_offset = 5;
+    session.time.day_light_offset = 0;
 
 
-      SMTP_Message message;
-      message.sender.name = "Gilboa Water Temp Receiver";
-      message.sender.email = sender_email;
-      message.subject = emailsubject;
-      message.addRecipient("Recipient ", recipient_emails[i]);
+    SMTP_Message message;
+    message.sender.name = "Gilboa Water Temp Receiver";
+    message.sender.email = sender_email;
+    message.subject = emailsubject;
 
-      //Send HTML message
-      String htmlMsg = "<div style=\"color: #000000;\"><h1> " ;
-      htmlMsg += emailmessage;
-      htmlMsg += "</h1><p> Mail Generated from  Gilboa Water Temperature Receiver</p></div>";
-      message.html.content = htmlMsg.c_str();
-      message.html.content = htmlMsg.c_str();
-      message.text.charSet = "us-ascii";
-      message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
-
-      /*Send raw text message
-      String textMsg = "Hello World! - Sent from ESP board";
-      message.text.content = textMsg.c_str();
-      message.text.charSet = "us-ascii";
-      message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
-      */
-      message.priority = esp_mail_smtp_priority::esp_mail_smtp_priority_low;
-      message.response.notify = esp_mail_smtp_notify_success | esp_mail_smtp_notify_failure | esp_mail_smtp_notify_delay;
-
-      if (!smtp.connect(&session)){
-        return;
+    for ( int i = 0; i < 6; i++) {
+      if (recipient_emails[i].length() > 5 && recipient_emails[i].indexOf("@") > 0) {
+        Serial.printf("Added email recipient: %s\n", recipient_emails[i].c_str());
+        message.addRecipient("Recipient ", recipient_emails[i]);
       }
-      if (!MailClient.sendMail(&smtp, &message)){
-        Serial.print("Error sending Email, " );
-        Serial.println(smtp.errorReason());
-      }
+    }
+
+    //Send HTML message
+    String htmlMsg = "<div style=\"color: #000000;\"><h1> " ;
+    htmlMsg += emailmessage;
+    htmlMsg += "</h1><p> Mail Generated from  Gilboa Water Temperature Receiver</p></div>";
+    message.html.content = htmlMsg.c_str();
+    message.html.content = htmlMsg.c_str();
+    message.text.charSet = "us-ascii";
+    message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+
+    /*Send raw text message
+    String textMsg = "Hello World! - Sent from ESP board";
+    message.text.content = textMsg.c_str();
+    message.text.charSet = "us-ascii";
+    message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+    */
+    message.priority = esp_mail_smtp_priority::esp_mail_smtp_priority_low;
+    message.response.notify = esp_mail_smtp_notify_success | esp_mail_smtp_notify_failure | esp_mail_smtp_notify_delay;
+
+    if (!smtp.connect(&session)){
+      return;
+    }
+    if (!MailClient.sendMail(&smtp, &message)){
+      Serial.print("Error sending Email, " );
+      Serial.println(smtp.errorReason());
     }
   }
 }
+
 
 //
 // /help or /start command - show available commands
