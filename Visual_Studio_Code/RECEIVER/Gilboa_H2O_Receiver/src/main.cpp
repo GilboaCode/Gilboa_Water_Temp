@@ -1726,8 +1726,8 @@ void setSenderFaultFlag(){
   // Set at t/c values to "N/A"
   for (int i = 0; i < 14; i++) temperatures[i] =0 ;
    Serial.println("Sender has failed to send any data for more than 60 minutes");
-  String alertDetails = "Sender has failed to send any data for more than 60 minutes";
-  sendEmailAlert("Sender Failure Alert", alertDetails);
+  String alertDetails = " \n-- The Sender has failed to send ANY data for more than 60 minutes -- \n";
+  sendEmailAlert("- Sender Failure Alert -", alertDetails);
 }
 
 // Clear thermocouple fault flag
@@ -1745,8 +1745,8 @@ void setTCFaultFlag (){
     // Set at t/c values to "N/A"
     for (int i = 0; i < 14; i++) temperatures[i] =0 ;
     Serial.println("Sender has failed to send thermocouple data for more than 60 minutes");
-    String alertDetails = "Sender has failed to send thermocouple data for more than 60 minutes";
-    sendEmailAlert("Sender Failure Alert", alertDetails);
+    String alertDetails = "\n -- The Sender has failed to send TEMPERATURE data for more than 60 minutes -- \n";
+    sendEmailAlert("- Temperature Failure Alert -", alertDetails);
 }
 
 // ====================== INTERUPT CALLBACK (ISR) ======================
