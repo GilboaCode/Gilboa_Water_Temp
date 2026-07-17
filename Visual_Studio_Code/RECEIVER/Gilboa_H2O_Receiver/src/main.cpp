@@ -490,8 +490,7 @@ void handleRoot() {
 for (int i = 0; i < 14; i++) {
  // String tempStr = (!temperatures[i] > -100.0) ? String(temperatures[i], 1) : "N/A";
   String tempStr = (temperatures[i] > -100.0) ? String(temperatures[i], 1) : "N/A";
-
-  String posStyle = temperatureDetectedHistory[i] 
+  String posStyle = temperatureDetectedHistory[i]
                     ? "font-weight:bold;" 
                     : "color:#d32f2f; font-weight:normal;"; // Red color if not detected
 
