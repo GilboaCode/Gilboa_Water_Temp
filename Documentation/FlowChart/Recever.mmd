@@ -19,7 +19,7 @@ flowchart TB
     10b --> 10c("Point bot to Debug Mode BOT")
     10c -->aa("Setup One-Wire") 
     aa-->10d{Look for WiFi} 
-    10d-- no -->aa
+    10d-- no -->10d
     10d--yes-->23a("Setup WiFiconnection")
 
 
