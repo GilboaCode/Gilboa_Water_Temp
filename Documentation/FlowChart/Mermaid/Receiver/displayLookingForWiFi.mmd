@@ -1,0 +1,9 @@
+flowchart TD
+    A([displayLookingForWiFi called]) --> B[Clear display buffer]
+    B --> C[Set font: u8g2_font_ncenB08_tr]
+    C --> D[Draw text: 'Looking for WiFi' at line 1]
+    D --> E[Draw text: 'SSID: WaterTempRec' at line 2]
+    E --> F[Draw text: 'psw: password123' at line 3]
+    F --> G[Draw text: 'IP Address: 192.168.4.1' at line 4]
+    G --> H[Send buffer to display]
+    H --> I([End])
