@@ -1,0 +1,26 @@
+flowchart TD
+
+    A([Start]) --> B[Set ADC stabilization delay value]
+
+    B --> C[Set ADC control pin HIGH]
+
+    C --> D[Delay for ADC stabilization]
+
+    D --> E[Initialize raw ADC value to zero]
+
+    E --> F[Set sample index i to 0]
+
+    F --> G{i less than battery samples}
+
+    G -- Yes --> H[Read battery ADC value]
+    H --> I[Add ADC value to raw total]
+    I --> J[Increment sample index i]
+    J --> G
+
+    G -- No --> K[Divide raw total by number of samples]
+
+    K --> L[Set ADC control pin LOW]
+
+    L --> M[Calculate battery voltage]
+
+    M --> N([Return voltage])

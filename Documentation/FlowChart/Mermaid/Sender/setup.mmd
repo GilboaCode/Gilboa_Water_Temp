@@ -1,0 +1,102 @@
+flowchart TD
+
+    A([Start]) --> B[Disable Preferences logging]
+    B --> C[Start Serial communication]
+    C --> D[Delay startup]
+    D --> E[Print sender version]
+    E --> F[Print wake message]
+
+    F --> G[Configure battery pin]
+    G --> H[Configure ADC control pin]
+    H --> I[Set ADC control HIGH]
+
+    I --> J[Configure OLED active pin input pulldown]
+    J --> K[Configure Debug state pin input pulldown]
+
+    K --> L[Power on DS2484]
+    L --> M[Load operator variables from NVS]
+
+    M --> N[Initialize Wire bus]
+    N --> O[Set Wire clock speed]
+    O --> P[Initialize OLED]
+    P --> Q[Initialize Wire1 bus]
+
+    Q --> R{DS2484 initialization successful}
+
+    R -- No --> S[Print DS2484 init failed]
+    S --> T[Stop execution]
+
+    R -- Yes --> U[Set Wire1 clock speed]
+
+    U --> V[Initialize LoRa]
+
+    V --> W{LoRa initialization successful}
+
+    W -- No --> X[Print LoRa init failed]
+    X --> T
+
+    W -- Yes --> Y{Debug switch HIGH}
+
+    Y -- Yes --> Z[Start OTA debug mode]
+    Y -- No --> AA[Continue]
+
+    Z --> AA
+
+    AA --> AB[Start LoRa receive mode]
+
+    AB --> AC[Reset device count]
+    AC --> AD[Clear DS2413 found flag]
+
+    AD --> AE[Set attempt counter to 0]
+
+    AE --> AF{Attempt less than 3}
+
+    AF -- No --> AG[Print sensor count]
+    AG --> AH{DS2413 found}
+
+    AF -- Yes --> AI[Reset one wire bus]
+
+    AI --> AJ{Reset successful}
+
+    AJ -- No --> AK[Delay 100 ms]
+    AK --> AL[Increase attempt counter]
+    AL --> AF
+
+    AJ -- Yes --> AM[Send search ROM command]
+
+    AM --> AN{One wire device found and count less than 15}
+
+    AN -- Yes --> AO[Print found ROM]
+    AO --> AP{Family code is DS18B20}
+
+    AP -- Yes --> AQ[Increase device count]
+
+    AP -- No --> AR{Family code is DS2413}
+
+    AR -- Yes --> AS[Store DS2413 ROM]
+    AS --> AT[Set DS2413 found flag]
+    AT --> AN
+
+    AR -- No --> AN
+
+    AQ --> AN
+
+    AN -- No --> AU{Device count greater than zero or DS2413 found}
+
+    AU -- Yes --> AV[Break search loop]
+    AU -- No --> AK
+
+    AV --> AK
+
+    AK --> AL
+    AL --> AF
+
+    AH -- Yes --> AI2[Print DS2413 ROM]
+    AH -- No --> AJ2[Continue]
+
+    AI2 --> AJ2
+
+    AJ2 --> AK2[Store LoRa RSSI]
+    AK2 --> AL2[Store cycle start time]
+    AL2 --> AM2[Set initialization flag]
+    AM2 --> AN2([End])

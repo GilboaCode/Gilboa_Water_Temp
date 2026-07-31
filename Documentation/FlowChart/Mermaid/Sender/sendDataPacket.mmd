@@ -1,0 +1,25 @@
+flowchart TD
+
+    A([Start]) --> B[Read battery voltage]
+
+    B --> C[Read CPU temperature]
+
+    C --> D[Convert CPU temperature to Fahrenheit]
+
+    D --> E[Print sender CPU temperature]
+
+    E --> F[Create data packet]
+
+    F --> G[Convert data packet to uppercase]
+
+    G --> H[Transmit data packet using LoRa]
+
+    H --> I{Transmission successful}
+
+    I -- Yes --> J[Print transmitted data packet]
+
+    I -- No --> K[Print transmission error]
+
+    J --> L([End])
+
+    K --> L

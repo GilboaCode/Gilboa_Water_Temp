@@ -1,0 +1,19 @@
+flowchart TD
+
+    A([Start]) --> B[Set inSleepMode false]
+    B --> C[Print waking up message]
+
+    C --> D[Get wakeup reason]
+
+    D --> E{Wakeup reason}
+
+    E -- GPIO EXT0 --> F[Print GPIO wakeup message]
+    E -- TIMER --> G[Print timer wakeup message]
+    E -- Other --> H[Print other wakeup message]
+
+    F --> I[Store cycle start time]
+    G --> I
+    H --> I
+
+    I --> J[Set OLED active flag true]
+    J --> K([End])

@@ -1,0 +1,23 @@
+flowchart TD
+
+    A([Start]) --> B[Read OLED switch state and receiver OLED flag]
+
+    B --> C[Set switchState value]
+
+    C --> D[Print OLED switch state information]
+
+    D --> E{Switch OFF and OLED active and not sleeping}
+
+    E -- Yes --> F[Print OLED turning OFF message]
+    F --> G[Enable OLED power save]
+    G --> H[Set OLED active flag false]
+    H --> I([End])
+
+    E -- No --> J{Switch ON and not sleeping}
+
+    J -- Yes --> K[Print OLED turning ON message]
+    K --> L[Disable OLED power save]
+    L --> M[Set OLED active flag true]
+    M --> I
+
+    J -- No --> I

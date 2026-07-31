@@ -1,0 +1,54 @@
+flowchart TD
+
+    A([Start]) --> B[Store start wait time]
+    B --> C{Wait time less than maximum}
+
+    C -- No --> D[Print no valid packet received]
+    D --> E([End])
+
+    C -- Yes --> F[Create receive packet variable]
+    F --> G[Receive LoRa packet]
+
+    G --> H{Receive successful and packet not empty}
+
+    H -- No --> I[Delay 10 ms]
+    I --> C
+
+    H -- Yes --> J[Print received packet]
+
+    J --> K{Packet starts with V prefix}
+
+    K -- No --> I
+
+    K -- Yes --> L[Find comma positions]
+
+    L --> M{Comma positions valid}
+
+    M -- No --> I
+
+    M -- Yes --> N[Extract sleep OLED and debug values]
+
+    N --> O[Convert values to integer and boolean]
+
+    O --> P{Values match current settings}
+
+    P -- Yes --> Q[Print no changes needed]
+    Q --> R([Return])
+
+    P -- No --> S{Sleep value between 0 and 30}
+
+    S -- Yes --> T[Update auxiliary sleep minutes]
+    S -- No --> U[Keep existing sleep value]
+
+    T --> V[Update OLED flag]
+    U --> V
+
+    V --> W[Print OLED flag update]
+
+    W --> X[Update debug flag]
+
+    X --> Y[Print debug flag update]
+
+    Y --> Z[Save operator variables]
+
+    Z --> AA([Return])
