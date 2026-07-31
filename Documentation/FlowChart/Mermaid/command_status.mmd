@@ -1,0 +1,73 @@
+flowchart TD
+
+    A([Start command_status])
+
+    A --> B[Create runningText string]
+    B --> C[Append Receiver IP Address]
+
+    C --> D{{Loop i = 0 to 13}}
+
+    D --> E[Append Depth Label]
+    E --> F{Temperature < -100.0?}
+
+    F -->|Yes| G[Append Temperature = N/A]
+    F -->|No| H[Append Temperature Value]
+
+    G --> I{More Depth Entries?}
+    H --> I
+
+    I -->|Yes| D
+    I -->|No| J[Append Sender Information]
+
+    J --> K[Add Sender Battery Voltage]
+    K --> L[Add Sender Version]
+    L --> M[Add Sender CPU Temperature]
+
+    M --> N[Add Sender Watchdog Timer Status]
+    N --> O{Watchdog Enabled?}
+
+    O -->|Yes| P[Append WDT Enabled = Yes]
+    O -->|No| Q[Append WDT Enabled = No]
+
+    P --> R
+    Q --> R
+
+    R[Add Sender Sleep Timer Information]
+
+    R --> S[Append Receiver Information]
+
+    S --> T[Add Receiver Version]
+    T --> U[Add Receiver CPU Temperature]
+
+    U --> V[Append Water Detection Status]
+
+    V --> W[Convert Bottom Water Status to Lowercase]
+    W --> X[Append Water Bottom Status]
+
+    X --> Y[Convert Top Water Status to Lowercase]
+    Y --> Z[Append Water Top Status]
+
+    Z --> AA[Append HTTP POST Status]
+
+    AA --> AB[Append OLED Status]
+    AB --> AC{OLED Enabled?}
+
+    AC -->|Yes| AD[Append OLED Active = On]
+    AC -->|No| AE[Append OLED Active = Off]
+
+    AD --> AF
+    AE --> AF
+
+    AF[Append Debug Mode Status]
+
+    AF --> AG{Debug Enabled?}
+
+    AG -->|Yes| AH[Append Debug Mode = On]
+    AG -->|No| AI[Append Debug Mode = Off]
+
+    AH --> AJ
+    AI --> AJ
+
+    AJ[bot.sendMessage-chat_id, runningText]
+
+    AJ --> AK([End])

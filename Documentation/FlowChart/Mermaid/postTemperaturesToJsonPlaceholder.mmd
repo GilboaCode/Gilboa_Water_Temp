@@ -1,0 +1,60 @@
+flowchart TD
+
+    A([Start])
+
+    A --> B{WiFi Connected?}
+
+    B -->|No| Z([Return])
+
+    B -->|Yes| C[Create HTTPClient]
+
+    C --> D[Begin HTTP Session]
+    D --> E[Add JSON Content-Type Header]
+
+    E --> F[Initialize Payload ]
+    F --> G[Set first = true]
+    G --> H[Initialize Loop i = 0]
+
+    H --> I{i < 14?}
+
+    I -->|No| J[Close JSON Array]
+
+    I -->|Yes| K{Temperature > -100?}
+
+    K -->|No| L[Increment i]
+
+    K -->|Yes| M{First Entry?}
+
+    M -->|No| N[Append Comma]
+    M -->|Yes| O[Append JSON Object]
+
+    N --> O
+
+    O --> P[Set first = false]
+
+    P --> L
+
+    L --> I
+
+    J --> Q[Print POST URL and Payload]
+
+    Q --> R[HTTP POST Payload]
+
+    R --> S{HTTP Code > 0?}
+
+    S -->|No| T[Print POST Failed]
+
+    S -->|Yes| U[Print HTTP Return Code]
+
+    U --> V{HTTP Code 200 or 201?}
+
+    V -->|Yes| W[Print Success Message]
+
+    V -->|No| X[Continue]
+
+    W --> X
+    T --> X
+
+    X --> Y[End HTTP Session]
+
+    Y --> Z

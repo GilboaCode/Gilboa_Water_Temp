@@ -1,0 +1,48 @@
+flowchart TD
+
+    A([Start smtpCallback])
+
+    A --> B[Print SMTP Status Information]
+
+    B --> C{Email Send Successful?}
+
+    C -->|No| D([Return])
+
+    C -->|Yes| E[Print Message Summary Header]
+
+    E --> F[Print Completed Message Count]
+
+    F --> G[Print Failed Message Count]
+
+    G --> H[Print Summary Footer]
+
+    H --> I[Initialize Result Loop<br/>i = 0]
+
+    I --> J{i < smtp.sendingResult.size?}
+
+    J -->|No| K[Print Final Separator]
+
+    J -->|Yes| L[Get SMTP_Result Item]
+
+    L --> M[Print Message Number]
+
+    M --> N{Result Completed?}
+
+    N -->|Yes| O[Print Status = success]
+
+    N -->|No| P[Print Status = failed]
+
+    O --> Q[Print Date and Time]
+    P --> Q
+
+    Q --> R[Print Recipient]
+
+    R --> S[Print Subject]
+
+    S --> T[Increment i]
+
+    T --> J
+
+    K --> U[Clear smtp.sendingResult]
+
+    U --> V([End smtpCallback])

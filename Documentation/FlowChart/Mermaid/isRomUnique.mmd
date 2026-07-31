@@ -1,0 +1,15 @@
+flowchart TD
+    A([Start isRomUnique]) --> B[Convert ROM to uppercase]
+    B --> C[Initialize i = 0]
+
+    C --> D{i < uniqueRomCount?}
+    D -- No --> E[Return True]
+    D -- Yes --> F{uniqueRoms == rom?}
+
+    F -- Yes --> G[Return False]
+    F -- No --> H[i++]
+
+    H --> D
+
+    E --> I([End])
+    G --> I

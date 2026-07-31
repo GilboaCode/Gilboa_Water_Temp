@@ -1,0 +1,24 @@
+flowchart TD
+    A([Start checkHardResetPin]) --> B[Read RESET_PIN]
+
+    B --> C{RESET_PIN == LOW<br/>AND resetTriggered == false?}
+
+    C -- Yes --> D[Set resetTriggered = true]
+    D --> E[Print WiFi RESET message]
+    E --> F[Create WiFiManager instance]
+    F --> G[Reset WiFi settings]
+    G --> H[Clear OLED buffer]
+    H --> I[Set OLED font]
+    I --> J[Display 'WiFi RESET']
+    J --> K[Display 'Rebooting...']
+    K --> L[Send OLED buffer]
+    L --> M[Delay 2000 ms]
+    M --> N[ESP.restart]
+    N --> O([End])
+
+    C -- No --> P{RESET_PIN == HIGH?}
+
+    P -- Yes --> Q[Set resetTriggered = false]
+    Q --> O
+
+    P -- No --> O

@@ -1,0 +1,29 @@
+flowchart TD
+    A([Start resolveRedirect])
+
+    A --> B[Create WiFiClientSecure]
+    B --> C[client.setInsecure]
+
+    C --> D[Create HTTPClient]
+    D --> E[Disable Automatic Redirects]
+
+    E --> F[http.begin -  client, URL]
+
+    F --> G{Begin Successful?}
+
+    G -- No --> H[Print HTTP Begin Failed]
+    H --> I[Return Empty String]
+
+    G -- Yes --> J[HTTP GET]
+
+    J --> K[Print HTTP Response Code]
+
+    K --> L{HTTP Redirect?}
+
+    L -- Yes --> M[Read Location Header]
+    M --> N[Print Redirect URL]
+    N --> O[http.end]
+    O --> P[Return Redirect URL]
+
+    L -- No --> Q[http.end]
+    Q --> R[Return Original URL]

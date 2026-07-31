@@ -1,0 +1,63 @@
+flowchart TD
+    A([Start setup])
+
+    A --> B[Disable Preferences logging]
+    B --> C[Serial.begin 115200]
+    C --> D[setupLoRa]
+    D --> E[Create LoRa Queue]
+
+    E --> F[Create ProcessTask<br/>Core 1]
+    F --> G[Create LoRaTask<br/>Core 0]
+
+    G --> H{Queue created?}
+    H -- No --> I[Print Queue Creation Failed]
+    I --> J[[Infinite Loop]]
+
+    H -- Yes --> K[Print Receiver Version]
+    K --> L[printOTAInfo]
+
+    L --> M[Configure GPIO Pins]
+    M --> N[Display Power OFF]
+
+    N --> O{Telegram Debug Pin LOW?}
+    O -- Yes --> P[Enable Debug Telegram Token]
+    O -- No --> Q[Use Production Telegram Token]
+
+    P --> R
+    Q --> R
+
+    R[Delay 100 ms] --> S[Initialize I2C]
+    S --> T[Initialize OLED]
+    T --> U[Display Looking For WiFi]
+
+    U --> V[Configure WiFiManager]
+    V --> W{AutoConnect Successful?}
+
+    W -- No --> X[Print WiFi Failed]
+    W -- Yes --> Y[Print IP Address]
+    Y --> Z[secured_client.setInsecure]
+    Z --> AA[Print WiFi Connected]
+
+    X --> AB[Register Web Server Routes]
+    AA --> AB
+
+    AB --> AC[server.begin]
+
+    AC --> AD[Initialize 14 Temperatures<br/>to -196.6°F]
+
+    AD --> AE[loadRomTable]
+    AE --> AF[loadGraphLimits]
+    AF --> AG[loadPostUrl]
+    AG --> AH[loadEmailConfig]
+    AH --> AI[loadOperatorVars]
+    AI --> AJ[loadRecipients]
+    AJ --> AK[loadSenderCreds]
+
+    AK --> AL[resetVariablesFlag = true]
+
+    AL --> AM[updateOLED]
+
+    AM --> AN[Clear Water Alert Flags]
+    AN --> AO[Clear senderSeenFlag]
+
+    AO --> AP([setup Complete])

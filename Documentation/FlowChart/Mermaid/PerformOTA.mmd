@@ -1,0 +1,25 @@
+flowchart TD
+    A([Start performOTA])
+
+    A --> B[Print 'Starting OTA Update']
+    B --> C[Clear telegramUpdateFailedFlag]
+
+    C --> D[Create WiFiClientSecure]
+    D --> E[client.setInsecure]
+    E --> F[Enable Auto Reboot]
+    F --> G[Enable HTTP Redirects]
+
+    G --> H[Print Firmware URL]
+    H --> I[httpUpdate.update]
+
+    I --> J{Update Result}
+
+    J -->|HTTP_UPDATE_FAILED| K[Print Error]
+    K --> L[telegramUpdateFailedFlag = true]
+    L --> M([Return])
+
+    J -->|HTTP_UPDATE_NO_UPDATES| N[Print 'No Update Available']
+    N --> M
+
+    J -->|HTTP_UPDATE_OK| O[Print 'Update Successful']
+    O --> P[[ESP32 Automatically Reboots]]
