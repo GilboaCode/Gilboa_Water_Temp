@@ -1,7 +1,7 @@
 flowchart TD
     A([Start loop])
 
-    A --> B[checkHardResetPin]
+    A --> B[[checkHardResetPin]]
     B --> C[server.handleClient]
 
     C --> D{WiFi connected?}
@@ -9,8 +9,8 @@ flowchart TD
     D -- Yes --> F{newPacketReceived?}
 
     F -- Yes --> G[Set newPacketReceived = false]
-    G --> H[updateOLED]
-    H --> I[postTemperaturesToJsonPlaceholder]
+    G --> H[[updateOLED]]
+    H --> I[[postTemperaturesToJsonPlaceholder]]
     I --> J[Print 'Posted temperatures']
     F -- No --> K
 
@@ -18,7 +18,7 @@ flowchart TD
 
     %% Bottom water detection
     K --> L{Bottom water detected<br/>and alert not sent?}
-    L -- Yes --> M[sendEmailAlert<br/>Bottom Sensor]
+    L -- Yes --> M[[sendEmailAlert<br/>Bottom Sensor]]
     M --> N[bottomWaterAlertSent = true]
     L -- No --> O{Bottom water == N?}
     O -- Yes --> P[bottomWaterAlertSent = false]
@@ -29,7 +29,7 @@ flowchart TD
 
     %% Top water detection
     Q --> R{Top water detected<br/>and alert not sent?}
-    R -- Yes --> S[sendEmailAlert<br/>Top Sensor]
+    R -- Yes --> S[[sendEmailAlert<br/>Top Sensor]]
     S --> T[topWaterAlertSent = true]
     R -- No --> U{Top water == N?}
     U -- Yes --> V[topWaterAlertSent = false]
@@ -39,7 +39,7 @@ flowchart TD
     V --> W
 
     %% Telegram
-    W --> X[checkTelegram]
+    W --> X[[checkTelegram]]
 
     %% Timer update
     X --> Y{30 seconds elapsed?}
