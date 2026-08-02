@@ -3,11 +3,11 @@ flowchart TD
 
     A --> B[Disable Preferences logging]
     B --> C[Serial.begin 115200]
-    C --> D[setupLoRa]
+    C --> D[[setupLoRa]]
     D --> E[Create LoRa Queue]
 
-    E --> F[Create ProcessTask<br/>Core 1]
-    F --> G[Create LoRaTask<br/>Core 0]
+    E --> F[[Create ProcessTask<br/>Core 1]]
+    F --> G[[Create LoRaTask<br/>Core 0]]
 
     G --> H{Queue created?}
     H -- No --> I[Print Queue Creation Failed]
@@ -45,17 +45,17 @@ flowchart TD
 
     AC --> AD[Initialize 14 Temperatures<br/>to -196.6°F]
 
-    AD --> AE[loadRomTable]
-    AE --> AF[loadGraphLimits]
-    AF --> AG[loadPostUrl]
-    AG --> AH[loadEmailConfig]
-    AH --> AI[loadOperatorVars]
-    AI --> AJ[loadRecipients]
-    AJ --> AK[loadSenderCreds]
+    AD --> AE[[loadRomTable]]
+    AE --> AF[[loadGraphLimits]]
+    AF --> AG[[loadPostUrl]]
+    AG --> AH[[loadEmailConfig]]
+    AH --> AI[[loadOperatorVars]]
+    AI --> AJ[[loadRecipients]]
+    AJ --> AK[[loadSenderCreds]]
 
     AK --> AL[resetVariablesFlag = true]
 
-    AL --> AM[updateOLED]
+    AL --> AM[[updateOLED]]
 
     AM --> AN[Clear Water Alert Flags]
     AN --> AO[Clear senderSeenFlag]
