@@ -3,6 +3,10 @@
 //    Correcting the problem of n/a for water detect due to data being sent to receiver before 1-wire power being turned on.
 //  * Added distinction between failed all LORA reception and failed just t/c reception (with messages sent to recipients).
 //  * Instead of sending seperate e-mails out, code has been changed to send one e-mail with all listed recipients in as "cc"ed.
+//  * On LoRa setup failure, the code will now wait 10 seconds and then restart the ESP32 instead of hanging in a while loop. 
+//    This allows for a more robust recovery from LoRa module issues.
+//  * In Telegram /status printout, moved Sender version before Sender battery voltage to make it easier to read and understand the 
+//    information being displayed.
 //
 // Receiver -- V1.3.02
 //  * Added code to monitor the timing of the "D" packet from the Sender to implement a watchdog. 
@@ -1404,13 +1408,14 @@ void command_status (String chat_id,String text) {
     runningText += String(temperatures[i], 1) ;
     }
   }
-  runningText += "\n\nSender Batt: " ;
-  runningText += lastSenderBatt ;
-  runningText += " v\nSender Ver: " ;
+  runningText += "\n\nSender Ver: " ;
   runningText += SenderVersion ;
   runningText += "\nSender CPU Temp: " ;
   runningText += Sender_temp_farenheit ;
   runningText += " °F" ;  
+  runningText += "\nSender Batt: " ;
+  runningText += lastSenderBatt ;
+  runningText += " v";
   runningText += "\nSender WDT: ";
   runningText += String(runningDataPacketTimer);
   runningText += " / ";
@@ -1780,7 +1785,8 @@ void setupLoRa() {
   int state = LoRa.begin(LORA_FREQ, 125.0, 7, 5, 0x34);
   if (state != RADIOLIB_ERR_NONE) {
     Serial.printf("Radio init failed: %d\n", state);
-    while (true);
+    delay(10000); // Wait 10 seconds before restarting
+    ESP.restart(); 
   } 
 
  // Attach interrupt callback
