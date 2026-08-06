@@ -456,17 +456,13 @@ void enterSleep() {
   inSleepMode = true;
 
   // Checking priority of sleep times, normal (30 min.), aux sleep time (>0 min.),
-  // debug flag from Receiver setpoint (1 min.), and Debug pin on Sender (20 sec)
-  if (hardwareDebugMode == true){
-    sleepTime=20; // 20 seconds
-    Serial.printf(">>> ENTERING %d Seconds SLEEP  <<<\n", sleepTime);
-    sleepValue = sleepTime * 1000000;
-  } else if (aux_sleep_minutes > 0) {
-      sleepTime = aux_sleep_minutes; 
+  // debug flag from Receiver setpoint (1 min.), and Debug pin on Sender (no sleep)
+  if (debug_flag_from_receiver == true) {
+      sleepTime = 1;
       Serial.printf(">>> ENTERING %d MIN SLEEP  <<<\n", sleepTime);
       sleepValue = sleepTime * 60ULL * 1000000;
-  } else if (debug_flag_from_receiver == true) {
-      sleepTime = 1;
+  } else if (aux_sleep_minutes > 0) {
+      sleepTime = aux_sleep_minutes; 
       Serial.printf(">>> ENTERING %d MIN SLEEP  <<<\n", sleepTime);
       sleepValue = sleepTime * 60ULL * 1000000;
   } else {
@@ -475,7 +471,6 @@ void enterSleep() {
       sleepValue = sleepTime * 60ULL * 1000000;
   }
   
-
   u8g2.setPowerSave(1);
   oledCurrentlyActive = false;
 
@@ -714,12 +709,16 @@ void loop() {
  
   // If hardware debug switch is made then skip sleep and stay awake for OTA updates
   // OK to sleep?
-  if (allReadingsSent) {
-    if(oledCurrentlyActive == true) {
-      delay(5000);  // Wait 5 seconds before sleeping if OLED is ON
+  if (hardwareDebugMode == false){
+    if (allReadingsSent) {
+      if(oledCurrentlyActive == true) {
+        delay(5000);  // Wait 5 seconds before sleeping if OLED is ON
+      }
+      enterSleep();
+      return;
     }
-    enterSleep();
-    return;
+  } else {
+    delay (1000);  // Stay awake for OTA updates  
   }
 
   delay(500);
