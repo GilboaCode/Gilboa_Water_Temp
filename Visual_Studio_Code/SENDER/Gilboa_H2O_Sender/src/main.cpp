@@ -53,7 +53,7 @@
 // ONLY enter sleep AFTER all readings have been sent
 //
 
-#define sender_version "v1.2.03"
+#define sender_version "v1.2.04"
 
 #include <RadioLib.h>
 #include <SPI.h>
