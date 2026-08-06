@@ -1,0 +1,62 @@
+flowchart TD
+
+    A([Start])
+
+    A --> B[Print 'Serving /romconfig page']
+    B --> C[Create HTML Header and CSS]
+    C --> D[Add Page Title and Back Link]
+
+    D --> E[Build ROM Assignment Table]
+
+    E --> F{{Loop Through 14 Sensor Positions}}
+
+    F --> G[Read Current ROM Assignment]
+    G --> H[Create Table Row]
+    H --> I[Populate ROM Dropdown]
+    I --> J[Create Set Button]
+    J --> K{More Sensors?}
+
+    K -->|Yes| F
+    K -->|No| L
+
+    L[Create Side-by-Side Layout]
+
+    L --> M[Build Graph Y-Axis Settings Form]
+    M --> N[Build Operator Variables Form]
+
+    N --> O[Build Sender Credentials Form]
+    O --> P[Build HTTP POST URL Form]
+
+    P --> Q[Build Recipient Email Form]
+
+    Q --> R{{Loop Through 6 Recipient Fields}}
+
+    R --> S[Add Recipient Input]
+    S --> T{More Recipients?}
+
+    T -->|Yes| R
+    T -->|No| U
+
+    U[Generate JavaScript]
+
+    U --> V[Graph Change Detection]
+    V --> W[Operator Change Detection]
+    W --> X[HTTP URL Change Detection]
+    X --> Y[Sender Credential Change Detection]
+    Y --> Z[Recipient Change Detection]
+
+    Z --> AA[Register Submit Event Handlers]
+
+    AA --> AB[Initialize Form State]
+
+    AB --> AC[Generate ROM JavaScript]
+
+    AC --> AD[ROM Change Detection]
+    AD --> AE[Highlight Changed Set Button]
+    AE --> AF[Reset Button After Submit]
+
+    AF --> AG[Close HTML Document]
+
+    AG --> AH[server.send HTML Page]
+
+    AH --> AI([End])

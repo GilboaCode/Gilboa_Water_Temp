@@ -1,0 +1,41 @@
+flowchart TD
+
+    A([Start]) --> B[Declare sleepTime]
+
+    B --> C{Already in sleep mode}
+
+    C -- Yes --> D([Return])
+
+    C -- No --> E[Set inSleepMode true]
+    E --> F[Print auxiliary sleep minutes]
+
+    F --> G[Set sleepTime to default sleep minutes]
+
+    G --> H{Aux sleep minutes greater than zero}
+
+    H -- Yes --> I[Set sleepTime to aux sleep minutes]
+
+    H -- No --> J{Debug switch HIGH or debug flag active}
+
+    J -- Yes --> K[Set sleepTime to 1 minute]
+
+    J -- No --> L[Keep default sleepTime]
+
+    I --> M[Print entering sleep message]
+    K --> M
+    L --> M
+
+    M --> N[Enable OLED power save mode]
+    N --> O[Set OLED active flag false]
+
+    O --> P[Power off DS2484]
+    P --> Q[Delay 10 ms]
+
+    Q --> R[Set justWokeUp flag true]
+    R --> S[Reset allReadingsSent flag]
+
+    S --> T[Enable GPIO 2 EXT0 wakeup]
+    T --> U[Enable timer wakeup]
+    U --> V[Start deep sleep]
+
+    V --> W([End])

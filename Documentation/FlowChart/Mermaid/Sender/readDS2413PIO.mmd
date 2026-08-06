@@ -1,0 +1,31 @@
+flowchart TD
+
+    A([Start]) --> B[Reset OneWire bus]
+
+    B --> C{OneWire reset successful}
+
+    C -- No --> D[Print DS2413 reset failed message]
+    D --> E[Return false]
+
+    C -- Yes --> F[Send Match ROM command]
+
+    F --> G[Set index j to 0]
+
+    G --> H{Index j less than 8}
+
+    H -- Yes --> I[Send ROM byte at index j]
+    I --> J[Increment index j]
+    J --> H
+
+    H -- No --> K[Send Read PIO Registers command]
+
+    K --> L[Read PIO logic state]
+
+    L --> M[Print PIO data]
+
+    M --> N{PIO data complement check valid}
+
+    N -- No --> O[Print DS2413 PIO read error]
+    O --> P[Return false]
+
+    N -- Yes --> Q[Return true]

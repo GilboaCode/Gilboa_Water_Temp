@@ -1,0 +1,59 @@
+flowchart TD
+
+    A([Start]) --> B[Declare hardwareDebugMode]
+
+    B --> C{justWokeUp}
+
+    C -- Yes --> D{Wakeup cause is TIMER}
+    D -- Yes --> E[Exit sleep]
+    D -- No --> F{Wakeup cause is EXT0}
+    E --> F
+    F -- Yes --> G[Exit sleep]
+    F -- No --> H[Clear justWokeUp flag]
+    G --> H
+    H --> I([Return])
+
+    C -- No --> J[Get current time]
+
+    J --> K{Debug switch HIGH}
+
+    K -- Yes --> L[Set hardwareDebugMode true]
+    L --> M[Handle OTA client]
+    M --> N[Print debug message]
+
+    K -- No --> O[Set hardwareDebugMode false]
+
+    N --> P[Update OLED active state]
+    O --> P
+
+    P --> Q{In sleep mode}
+
+    Q -- Yes --> R[Delay 100 ms]
+    R --> S([Return])
+
+    Q -- No --> T[Print sending data packet]
+    T --> U[Send data packet]
+    U --> V[Delay 2000 ms]
+    V --> W[Print turning on 1 wire board]
+    W --> X[Power on DS2484]
+    X --> Y[Delay 10 ms]
+    Y --> Z[Read and transmit all probes]
+    Z --> AA[Receive variables from receiver]
+
+    AA --> AB{Hardware debug mode}
+
+    AB -- Yes --> AC[Reset allReadingsSent flag]
+    AC --> AD[Delay 500 ms]
+    AD --> AE([End])
+
+    AB -- No --> AF{All readings sent}
+
+    AF -- No --> AD
+
+    AF -- Yes --> AG{OLED currently active}
+
+    AG -- Yes --> AH[Delay 5000 ms]
+    AH --> AI[Enter sleep]
+    AI --> AJ([Return])
+
+    AG -- No --> AI

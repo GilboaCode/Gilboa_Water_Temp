@@ -1,0 +1,55 @@
+flowchart TD
+
+    A([Start]) --> B[Reset OneWire bus]
+
+    B --> C{Reset successful}
+
+    C -- No --> D[Return temperature error value]
+
+    C -- Yes --> E[Send Match ROM command]
+
+    E --> F[Set index i to 0]
+
+    F --> G{i less than 8}
+
+    G -- Yes --> H[Send ROM byte at index i]
+    H --> I[Increment i]
+    I --> G
+
+    G -- No --> J[Send Convert Temperature command]
+
+    J --> K[Wait for conversion]
+
+    K --> L[Reset OneWire bus again]
+
+    L --> M{Reset successful}
+
+    M -- No --> D
+
+    M -- Yes --> N[Send Match ROM command]
+
+    N --> O[Set index i to 0]
+
+    O --> P{i less than 8}
+
+    P -- Yes --> Q[Send ROM byte at index i]
+    Q --> R[Increment i]
+    R --> P
+
+    P -- No --> S[Send Read Scratchpad command]
+
+    S --> T[Create data buffer]
+
+    T --> U[Set index i to 0]
+
+    U --> V{i less than 9}
+
+    V -- Yes --> W[Read scratchpad byte into data array]
+    W --> X[Increment i]
+    X --> V
+
+    V -- No --> Y[Combine data bytes into raw temperature value]
+
+    Y --> Z[Convert raw value to Celsius]
+
+    Z --> AA([Return temperature])

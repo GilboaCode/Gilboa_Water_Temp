@@ -1,0 +1,11 @@
+flowchart TD
+
+    A([Start]) --> B[Initialize DS2484 device]
+
+    B --> C{DS2484 initialization successful}
+
+    C -- No --> D[Return false]
+
+    C -- Yes --> E[Set Wire1 clock to 400 kHz]
+
+    E --> F[Return true]

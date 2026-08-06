@@ -1,0 +1,40 @@
+flowchart TD
+    A([Start checkTelegram])
+
+    A --> B{WiFi Connected?}
+
+    B -- No --> C([Return])
+
+    B -- Yes --> D[Get New Telegram Messages]
+
+    D --> E{New Messages?}
+
+    E -- No --> C
+
+    E -- Yes --> F[[handleNewMessages]]
+
+    F --> G[Get Next Batch of Messages]
+
+    G --> H{telegramResetFlag?}
+
+    H -- Yes --> I[ESP.restart]
+
+    H -- No --> J{telegramUpdateFlag?}
+
+    J -- No --> K{More Messages?}
+
+    J -- Yes --> L[Clear Update Flag]
+
+    L --> M[[performOTA]]
+
+    M --> N{OTA Failed?}
+
+    N -- Yes --> O[Send 'OTA Update Failed'<br/>Telegram Message]
+
+    N -- No --> P[Send 'OTA Successful'<br/>Telegram Message]
+
+    O --> K
+    P --> K
+
+    K -- Yes --> F
+    K -- No --> C

@@ -1,0 +1,13 @@
+flowchart TD
+    A([LoRa Packet Interrupt<br/>onPacketReceived])
+
+    A --> B[Initialize<br/>xHigherPriorityTaskWoken = pdFALSE]
+
+    B --> C[Notify LoRaTask<br/>vTaskNotifyGiveFromISR]
+
+    C --> D{Higher Priority<br/>Task Woken?}
+
+    D -- Yes --> E[portYIELD_FROM_ISR]
+    D -- No --> F([ISR Exit])
+
+    E --> F

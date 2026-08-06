@@ -1,0 +1,80 @@
+flowchart TD
+
+    A([ProcessTask Started])
+    A --> B{{Wait for Packet<br/>xQueueReceive}}
+
+    B -->|Packet Received| C[Convert packet.text to String]
+    C --> D[Extract first character]
+    D --> E{Packet Type?}
+
+    %% --------------------------
+    %% Temperature Packet
+    %% --------------------------
+    E -->|T| T1[Parse ROM Address]
+    T1 --> T2[Parse Temperature °C]
+    T2 --> T3[Convert °C to °F]
+    T3 --> T4{ROM matches<br/>Configured Table?}
+
+    T4 -->|Yes| T5[Store Temperature]
+    T5 --> T6[Set temperatureDetected=true]
+
+    T4 -->|No| T7[Print Unassigned ROM]
+
+    T6 --> T8[[Add ROM to Unique List]]
+    T7 --> T8
+
+    T8 --> T9[Update RSSI]
+    T9 --> T10[Update lastPacketTime]
+    T10 --> T11[Reset runningTimer]
+    T11 --> T12[Sender State = Awake]
+    T12 --> Z
+
+    %% --------------------------
+    %% Data Packet
+    %% --------------------------
+    E -->|D| D1[Parse Battery Voltage]
+    D1 --> D2[Parse Sender Version]
+    D2 --> D3[Parse Sleep Time]
+    D3 --> D4[Parse OLED Flag]
+    D4 --> D5[Parse Debug Flag]
+    D5 --> D6[Parse Water Sensors]
+    D6 --> D7[Parse Sender CPU Temp]
+
+    D7 --> D8{Receiver Variables<br/>Match Sender?}
+
+    D8 -->|No| D9[resetVariablesFlag=true]
+    D8 -->|Yes| D10[No Action]
+
+    D9 --> D11
+    D10 --> D11
+
+    D11[Update Battery Voltage]
+    D11 --> D12[Update RSSI]
+    D12 --> D13[Reset runningTimer]
+    D13 --> D14[Sender State = Awake]
+
+    D14 --> D15[senderSeenFlag = true]
+    D15 --> D16[lastDataPacketTime = millis]
+    D16 --> D17[previousDataPacketTime = runningDataPacketTimer]
+    D17 --> D18[runningDataPacketTimer = 0]
+    D18 --> D19[senderFailedFlag = false]
+    D19 --> Z
+
+    %% --------------------------
+    %% Other Packet
+    %% --------------------------
+    E -->|Other| Z
+
+    %% --------------------------
+    %% Sleep Check
+    %% --------------------------
+    Z --> S1{Last Packet >20 sec?}
+
+    S1 -->|Yes| S2{Already Asleep?}
+
+    S2 -->|No| S3[Sender State = Asleep]
+    S2 -->|Yes| B
+
+    S3 --> B
+
+    S1 -->|No| B

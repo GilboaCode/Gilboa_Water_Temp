@@ -1,0 +1,38 @@
+flowchart TD
+
+    A([Start]) --> B[Print current WiFi mode]
+    B --> C[Print debug mode active message]
+    C --> D[Set WiFi mode to access point]
+    D --> E[Delay startup]
+
+    E --> F[Create access point IP address]
+    F --> G[Create gateway address]
+    G --> H[Create network mask]
+
+    H --> I[Configure soft access point]
+
+    I --> J{SoftAP start successful}
+
+    J -- No --> K[Print SoftAP failed]
+    K --> L([Return])
+
+    J -- Yes --> M[Get access point IP]
+    M --> N[Print access point IP address]
+
+    N --> O[Configure soft access point again]
+    O --> P[Print configuration result]
+
+    P --> Q[Start access point]
+    Q --> R[Print AP start result]
+
+    R --> S[Print access point IP]
+    S --> T[Print access point SSID]
+
+    T --> U[Create web server endpoint]
+    U --> V[Set connection close header]
+    V --> W[Send HTTP response]
+
+    W --> X[Initialize ESP2SOTA library]
+    X --> Y[Start web server]
+
+    Y --> Z([End])

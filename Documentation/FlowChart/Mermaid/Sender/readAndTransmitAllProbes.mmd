@@ -1,0 +1,93 @@
+flowchart TD
+
+    A([Start]) --> B{All readings already sent}
+
+    B -- Yes --> C([Return])
+
+    B -- No --> D[Print reading and transmitting message]
+
+    D --> E{One wire reset successful}
+
+    E -- Yes --> F[Send Skip ROM command]
+    F --> G[Start temperature conversion]
+
+    E -- No --> H[Continue]
+
+    G --> H
+
+    H --> I[Delay conversion time]
+
+    I --> J{OLED currently active}
+
+    J -- Yes --> K[Clear OLED buffer]
+    K --> L[Set OLED font]
+    L --> M[Display sender information]
+    M --> N[Display sensor count]
+    N --> O[Display battery voltage]
+    O --> P[Display LoRa RSSI]
+    P --> Q[Display ROM sleep time]
+    Q --> R[Display auxiliary sleep time]
+    R --> S[Send OLED buffer]
+
+    J -- No --> T[Skip OLED update]
+
+    S --> T
+
+    T --> U[Set probe index i to 0]
+
+    U --> V{i less than device count}
+
+    V -- Yes --> W[Read temperature from probe]
+    W --> X[Create temperature packet]
+    X --> Y[Convert ROM value to uppercase]
+    Y --> Z[Transmit temperature packet]
+
+    Z --> AA{Transmission successful}
+
+    AA -- Yes --> AB[Print transmitted packet]
+    AA -- No --> AC[Print transmission error]
+
+    AB --> AD[Delay between packets]
+    AC --> AD
+
+    AD --> AE[Increment probe index]
+    AE --> V
+
+    V -- No --> AF{DS2413 water detector available}
+
+    AF -- Yes --> AG[Read DS2413 PIO state]
+
+    AG --> AH{DS2413 read successful}
+
+    AH -- Yes --> AI[Update top water detection state]
+    AI --> AJ[Update bottom water detection state]
+    AJ --> AK[Print water detection status]
+
+    AH -- No --> AL[Set water states to error]
+    AL --> AM[Print DS2413 read failed]
+
+    AK --> AN[Continue]
+    AM --> AN
+
+    AF -- No --> AO[Set water states to not available]
+    AO --> AP[Print no DS2413 found]
+
+    AN --> AQ[Delay between packets]
+    AP --> AQ
+
+    AQ --> AR[Create complete packet indicator]
+    AR --> AS[Transmit complete packet]
+
+    AS --> AT{Complete packet transmission successful}
+
+    AT -- Yes --> AU[Print complete packet]
+    AT -- No --> AV[Print complete packet error]
+
+    AU --> AW[Delay between packets]
+    AV --> AW
+
+    AW --> AX[Set all readings sent true]
+
+    AX --> AY[Print ready for sleep message]
+
+    AY --> AZ([End])
