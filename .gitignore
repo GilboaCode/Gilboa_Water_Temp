@@ -7,6 +7,7 @@
 **/dist/
 **/examples/
 **/images/
+**/test/
 
 # Python
 __pycache__/
