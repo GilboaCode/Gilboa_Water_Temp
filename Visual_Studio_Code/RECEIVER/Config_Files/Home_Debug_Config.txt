@@ -1,0 +1,32 @@
+ESP32_NVS_BACKUP_V1
+graph.minY=32.000000
+graph.maxY=90.000000
+email.recipient_email=jeffklopping@gmail.com
+recipients.email0=jeffklopping@gmail.com
+recipients.email1=
+recipients.email2=
+recipients.email3=
+recipients.email4=
+recipients.email5=
+sender.email=GilboaWaterTemp@gmail.com
+sender.password=efocbnzvxhcfwngx
+post.url=http://jsonplaceholder.typicode.com/test
+operator.aux_sleep=0
+operator.oled_flag=0
+operator.debug_flag=0
+operator.watchdog_en=1
+rom_table.0=28 6E C0 B2 00 00 00 7A
+rom_table.1=28 BE 6D B2 00 00 00 61
+rom_table.2=28 4D 21 7B 00 00 00 28
+rom_table.3=28 ED A2 7B 00 00 00 F1
+rom_table.4=28 D3 17 BA 00 00 00 24
+rom_table.5=28 AF D9 B2 00 00 00 5D
+rom_table.6=
+rom_table.7=
+rom_table.8=
+rom_table.9=
+rom_table.10=
+rom_table.11=
+rom_table.12=
+rom_table.13=
+ESP32_NVS_BACKUP_END

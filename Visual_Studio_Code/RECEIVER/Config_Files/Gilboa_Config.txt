@@ -1,0 +1,32 @@
+ESP32_NVS_BACKUP_V1
+graph.minY=34.400002
+graph.maxY=75.000000
+email.recipient_email=4193042172@vtext.com
+recipients.email0=4193042172@vtext.com
+recipients.email1=jeffklopping@gmail.com
+recipients.email2=2488954874@tmomail.net
+recipients.email3=4194807632@tmomail.net
+recipients.email4=
+recipients.email5=
+sender.email=GilboaWaterTemp@gmail.com
+sender.password=efocbnzvxhcfwngx
+post.url=https://gilboaquarry.com/temp_api.php?key=gilboa_temp_9f3kL2x8Qp7Zr4T
+operator.aux_sleep=0
+operator.oled_flag=0
+operator.debug_flag=0
+operator.watchdog_en=1
+rom_table.0=28 DB A7 B1 00 00 00 5E
+rom_table.1=28 12 C7 B4 00 00 00 C7
+rom_table.2=28 A6 60 B2 00 00 00 77
+rom_table.3=28 E4 57 B9 00 00 00 2D
+rom_table.4=28 F0 9B B4 00 00 00 34
+rom_table.5=28 48 CA BA 00 00 00 DF
+rom_table.6=28 F7 6F BA 00 00 00 1D
+rom_table.7=28 57 DF BA 00 00 00 0E
+rom_table.8=28 04 DB BA 00 00 00 66
+rom_table.9=28 D2 A5 B4 00 00 00 CA
+rom_table.10=28 70 F6 BA 00 00 00 36
+rom_table.11=28 57 B8 B4 00 00 00 5B
+rom_table.12=28 54 4E B4 00 00 00 38
+rom_table.13=28 CE A0 B4 00 00 00 3E
+ESP32_NVS_BACKUP_END

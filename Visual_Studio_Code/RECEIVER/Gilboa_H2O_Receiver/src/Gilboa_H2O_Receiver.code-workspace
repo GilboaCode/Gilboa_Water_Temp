@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "Gilboa_H2O_Receiver",
+			"path": ".."
+		},
+		{
+			"name": "Gilboa_H2O_Sender",
+			"path": "../../../SENDER/Gilboa_H2O_Sender"
+		}
+	],
+	"settings": {}
+}
