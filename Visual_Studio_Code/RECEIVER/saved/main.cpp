@@ -5,6 +5,11 @@
 //  * Added a command to the Telegram bot to activate the OLED display on the Receiver for 30 seconds (/disp_on)).
 //  * Added two command to USB Terminal to BACKUP and RESTORE the NVS data to a file on the SD card. This is to allow 
 //    for easy backup and restore of the Receiver configuration data.
+//  * Made the SSID and Password fixed in code. On power up it selects between two SSID's and passwords based on the 
+//    state of Debug mode input (GPIO4). If GPIO4 is shorted to ground it will use the debug SSID and password, if not 
+//    it will use the production SSID and password. The server will select the IP address. This address will show on the
+//    OLED display and on the Telegram /status command. The IP address is fixed in code for both the debug and production 
+//    SSID's.   
 
 // Receiver -- v1.3.03
 //  * Followed the splitting of the "D" packet from the Sender to "D" excluding water detect and "W" for water detect. 
@@ -130,12 +135,34 @@
 #include <esp_image_format.h>
 
 
-// Default AP IP address
-String ipString = "192.168.43.1";
-IPAddress localIP;
-IPAddress gateway;
-IPAddress subnet;
+// ---------------------------------------
+// ---------- IP configurations ----------
+// ---------------------------------------
+// Gilboa_Water_Temperature project IP addresses
+//String ssid_pd     = "Office";
+//String password_pd = "FullTank#0412";
+String ssid_pd     = "Gilboa Guest";
+String password_pd = "DiveGilboa";
+IPAddress ip_pd(192, 168, 88, 100);
+IPAddress gw_pd(192, 168, 88, 1);
+IPAddress sn_pd(255, 255, 255, 0);
 
+
+// Debug WiFi credentials for testing
+String ssid_db     = "k-net";
+String password_db = "5f6d35440b39983686af09321d";
+IPAddress ip_db(192, 168, 1, 230);
+IPAddress gw_db(192, 168, 1, 1);
+IPAddress sn_db(255, 255, 255, 0);
+
+
+
+IPAddress primaryDNS(8, 8, 8, 8);
+IPAddress secondaryDNS(8, 8, 4, 4);
+
+// ---------- WiFi credentials ----------
+String ssid     = "";
+String password = "";
 
 // Telegram Bot
 #include <WiFiClientSecure.h>
@@ -387,7 +414,7 @@ void loadOperatorVars() {
   aux_sleep_minutes = prefs.getInt("aux_sleep", 0);
   OLED_flag_from_receiver = prefs.getBool("oled_flag", false);
   debug_flag_from_receiver = prefs.getBool("debug_flag", false);
-  watchdogEnableFlag = prefs.getBool("watchdog_enabled", true);
+  watchdogEnableFlag = prefs.getBool("watchdog_en", true);
   prefs.end();
 
   // Clamp aux_sleep_minutes
@@ -407,7 +434,7 @@ void saveOperatorVars() {
   prefs.putInt("aux_sleep", aux_sleep_minutes);
   prefs.putBool("oled_flag", OLED_flag_from_receiver);
   prefs.putBool("debug_flag", debug_flag_from_receiver);
-  prefs.putBool("watchdog_enabled", watchdogEnableFlag);
+  prefs.putBool("watchdog_en", watchdogEnableFlag);
   prefs.end();
   Serial.println("Operator variables saved to NVS");
 }
@@ -462,17 +489,6 @@ bool isValidRom(String rom) {
 }
 
 
-// === No WiFi - Display "Looking for WiFi" ===
-void displayLookingForWiFi() {
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.drawStr(0, 10, "Looking for WiFi");
-  u8g2.drawStr(0, 20, "SSID: WaterTempRec");
-  u8g2.drawStr(0, 30, "psw: password123");
-  String ipAddress = "IP: " + ipString;
-  u8g2.drawStr(0, 40, ipAddress.c_str());
-  u8g2.sendBuffer();
-}
 
 // === GPIO45 RESET ===
 void checkHardResetPin() {
@@ -1430,6 +1446,13 @@ void command_superhelp (String chat_id, String text){
 void command_status (String chat_id,String text) {
   String runningText = "Receiver IP Address: " ; 
   runningText +=  WiFi.localIP().toString();
+  runningText += "\nReceiver Gateway IP Address: " ;
+  runningText +=  WiFi.gatewayIP().toString();
+  runningText += "\nReceiver Subnet Mask: " ;
+  runningText +=  WiFi.subnetMask().toString();
+  runningText += "\nReceiver MAC Address: " ;
+  runningText +=  WiFi.macAddress();
+  runningText += "\n";
   
   for (int i = 0; i < 14; i++) {
   runningText += "\n";
@@ -2098,7 +2121,7 @@ void exportNVSBackup() {
   Serial.print("operator.debug_flag=");
   Serial.println(debug_flag_from_receiver ? 1 : 0);
 
-  Serial.print("operator.watchdog_enabled=");
+  Serial.print("operator.watchdog_en=");
   Serial.println(watchdogEnableFlag ? 1 : 0);
 
   // ----------------------------------------------------------
@@ -2304,12 +2327,11 @@ bool restoreNVSLine(String line) {
     return true;
   }
 
-  if (variable == "operator.watchdog_enabled") {
-
+  if (variable == "operator.watchdog_en") {
     bool val = (value.toInt() != 0);
 
     prefs.begin("operator", false);
-    prefs.putBool("watchdog_enabled", val);
+    prefs.putBool("watchdog_en", val);
     prefs.end();
 
     watchdogEnableFlag = val;
@@ -2461,7 +2483,27 @@ void handleUSBCommands() {
   }
 }
 
-
+void ScanNetworks(){
+    int numNetworks = WiFi.scanNetworks();
+  
+  if (numNetworks == 0) {
+    Serial.println("No WiFi networks found");
+  } else {
+    Serial.print(numNetworks);
+    Serial.println(" networks found:");
+    for (int i = 0; i < numNetworks; ++i) {
+      // Print SSID and RSSI for each network found
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(WiFi.SSID(i));
+      Serial.print(" (");
+      Serial.print(WiFi.RSSI(i));
+      Serial.print(")");
+      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " " : "*");
+      delay(10);
+    }
+  }
+}
 
 // === SETUP ===
 void setup() {
@@ -2515,31 +2557,71 @@ xTaskCreatePinnedToCore(
   u8g2.begin();
 
 
-  displayLookingForWiFi();
-
-  WiFiManager wm; wm.setConfigPortalTimeout(180);
-
-  // Setup static IP, gateway, and subnet for the ESP32 Access Point
-  localIP.fromString(ipString);
-  gateway = localIP;
-  subnet = IPAddress(255, 255, 255, 0);
-
-// Configure the static IP BEFORE starting the AP
-  WiFi.softAPConfig(localIP, gateway, subnet);
-
-  if (!wm.autoConnect("WaterTempRec","password123")) {
-    Serial.println("WiFi failed → portal");
+// Selecting either Gilboa or Debug credentials
+IPAddress local_IP, gateway, subnet;
+if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
+  Serial.println("Using Debug WiFi credentials");
+  ssid     = ssid_db;
+  password = password_db;
+  local_IP = ip_db;
+  gateway  = gw_db;
+  subnet   = sn_db;
+} else {
+  Serial.println("Using Production WiFi credentials");
+  ssid     = ssid_pd;
+  password = password_pd;
+  local_IP = ip_pd; 
+  gateway  = gw_pd;
+  subnet   = sn_pd;
+}
+/*
+// Define your new MAC address (must be a valid unicast address)
+uint8_t newMAC[] = {0x70, 0xAF, 0x09, 0xD3, 0xC6, 0x29};
+  // Set the new base MAC address
+  if (esp_base_mac_addr_set(newMAC) == ESP_OK) {
+    Serial.println("MAC address set successfully");
   } else {
-    Serial.print("IP: "); Serial.println(WiFi.localIP());
-    Serial.print("DNS: "); Serial.println(WiFi.dnsIP());
-
-    
-    secured_client.setInsecure();
-
-    Serial.println("\nWiFi connected");
-  //  sendEmailAlert("Receiver Started", "The water temperature receiver has started and connected to WiFi.");
-    
+    Serial.println("Failed to set MAC address");
   }
+*/
+
+  WiFi.mode(WIFI_STA);
+/*
+  // Configure static IP **before** connecting
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+    Serial.println("STA Failed to configure");
+  }
+*/
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  //ScanNetworks(); // Scan and print available WiFi networks
+
+  WiFi.begin(ssid, password);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.print ("SSID: ");
+  Serial.println(ssid);
+  Serial.println("WiFi connected!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());   
+  Serial.print("Gateway: ");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("Subnet: ");
+  Serial.println(WiFi.subnetMask());
+  Serial.print("Mac Address: ");
+  Serial.println (WiFi.macAddress());
+  secured_client.setInsecure();
+
+
+
+
 
   
   server.on("/", handleRoot);
