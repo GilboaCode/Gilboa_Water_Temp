@@ -143,22 +143,14 @@
 //String password_pd = "FullTank#0412";
 String ssid_pd     = "Gilboa Guest";
 String password_pd = "DiveGilboa";
-IPAddress ip_pd(192, 168, 88, 100);
-IPAddress gw_pd(192, 168, 88, 1);
-IPAddress sn_pd(255, 255, 255, 0);
+
 
 
 // Debug WiFi credentials for testing
 String ssid_db     = "k-net";
 String password_db = "5f6d35440b39983686af09321d";
-IPAddress ip_db(192, 168, 1, 230);
-IPAddress gw_db(192, 168, 1, 1);
-IPAddress sn_db(255, 255, 255, 0);
 
 
-
-IPAddress primaryDNS(8, 8, 8, 8);
-IPAddress secondaryDNS(8, 8, 4, 4);
 
 // ---------- WiFi credentials ----------
 String ssid     = "";
@@ -1444,7 +1436,9 @@ void command_superhelp (String chat_id, String text){
 
 //  /status command
 void command_status (String chat_id,String text) {
-  String runningText = "Receiver IP Address: " ; 
+  String runningText = "Network: ";
+  runningText +=  WiFi.SSID();
+  runningText += "\nReceiver IP Address: " ; 
   runningText +=  WiFi.localIP().toString();
   runningText += "\nReceiver Gateway IP Address: " ;
   runningText +=  WiFi.gatewayIP().toString();
@@ -2483,29 +2477,10 @@ void handleUSBCommands() {
   }
 }
 
-void ScanNetworks(){
-    int numNetworks = WiFi.scanNetworks();
-  
-  if (numNetworks == 0) {
-    Serial.println("No WiFi networks found");
-  } else {
-    Serial.print(numNetworks);
-    Serial.println(" networks found:");
-    for (int i = 0; i < numNetworks; ++i) {
-      // Print SSID and RSSI for each network found
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(WiFi.SSID(i));
-      Serial.print(" (");
-      Serial.print(WiFi.RSSI(i));
-      Serial.print(")");
-      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " " : "*");
-      delay(10);
-    }
-  }
-}
-
+// =============
 // === SETUP ===
+// =============
+
 void setup() {
   esp_log_level_set("Preferences", ESP_LOG_NONE); 
   Serial.begin(115200); delay(1000);
@@ -2558,44 +2533,22 @@ xTaskCreatePinnedToCore(
 
 
 // Selecting either Gilboa or Debug credentials
-IPAddress local_IP, gateway, subnet;
 if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   Serial.println("Using Debug WiFi credentials");
   ssid     = ssid_db;
   password = password_db;
-  local_IP = ip_db;
-  gateway  = gw_db;
-  subnet   = sn_db;
+
 } else {
   Serial.println("Using Production WiFi credentials");
   ssid     = ssid_pd;
   password = password_pd;
-  local_IP = ip_pd; 
-  gateway  = gw_pd;
-  subnet   = sn_pd;
 }
-/*
-// Define your new MAC address (must be a valid unicast address)
-uint8_t newMAC[] = {0x70, 0xAF, 0x09, 0xD3, 0xC6, 0x29};
-  // Set the new base MAC address
-  if (esp_base_mac_addr_set(newMAC) == ESP_OK) {
-    Serial.println("MAC address set successfully");
-  } else {
-    Serial.println("Failed to set MAC address");
-  }
-*/
 
   WiFi.mode(WIFI_STA);
-/*
-  // Configure static IP **before** connecting
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("STA Failed to configure");
-  }
-*/
+
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
-  //ScanNetworks(); // Scan and print available WiFi networks
 
   WiFi.begin(ssid, password);
 
