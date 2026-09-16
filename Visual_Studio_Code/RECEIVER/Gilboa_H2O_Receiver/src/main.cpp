@@ -1440,7 +1440,7 @@ void command_superhelp (String chat_id, String text){
 
 //  /status command
 void command_status (String chat_id,String text) {
-  String runningText = "Network: ";
+  String runningText = "Receiver Network: ";
   runningText +=  WiFi.SSID();
   runningText += "\nReceiver IP Address: " ; 
   runningText +=  WiFi.localIP().toString();
