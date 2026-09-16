@@ -1,3 +1,7 @@
+// Receiver -- v1.3.05
+//  * Added the wifi network name to the Telegram /status command to show which network the Receiver is connected to. 
+//    This is to help with determining what Network the Receiver is connected to.
+
 // Receiver -- v1.3.04
 //  * Modified the code to turn off the OLED after 30 seconds after power up of the Receiver. This is to prevent the OLED from being on 
 //    for long periods of time and heating up the Receiver.
@@ -111,7 +115,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.04"
+#define receiver_version "v1.3.05"
 
 #include <RadioLib.h>
 #include <SPI.h>
