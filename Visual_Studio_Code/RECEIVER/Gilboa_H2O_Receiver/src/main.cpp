@@ -1202,9 +1202,9 @@ void postTemperaturesToJsonPlaceholder() {
 
 void updateOLED() {
   // OLED CODE
+  sleep_time_for_sender = SenderSleepTime;
   if (OLED_On_Flag == true) {
     String debugStr ;
-    sleep_time_for_sender = SenderSleepTime;
     if (aux_sleep_minutes != 0) {
       sleep_time_for_sender = aux_sleep_minutes;
     } else {
