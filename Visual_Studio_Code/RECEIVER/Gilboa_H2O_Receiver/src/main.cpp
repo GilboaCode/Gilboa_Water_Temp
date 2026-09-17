@@ -229,7 +229,7 @@ int delayTimeBeforeVPacket = 225; // Delay between packets in milliseconds
 
 // Global state
 String SenderVersion = "N/A";
-String SenderSleepTime = "N/A";
+int  SenderSleepTime = 0;
 String ReceiverVersion = receiver_version;
 
 String lastSenderBatt = "N/A";
@@ -1204,8 +1204,7 @@ void updateOLED() {
   // OLED CODE
   if (OLED_On_Flag == true) {
     String debugStr ;
-    sleep_time_for_sender ;
-    sleep_time_for_sender = atoi(SenderSleepTime.c_str());
+    sleep_time_for_sender = SenderSleepTime;
     if (aux_sleep_minutes != 0) {
       sleep_time_for_sender = aux_sleep_minutes;
     } else {
