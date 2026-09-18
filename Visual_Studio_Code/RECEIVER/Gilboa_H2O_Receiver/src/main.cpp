@@ -1,3 +1,8 @@
+// Receiver -- v1.3.06
+//  * Added a new command (/@NETWORK@) to the Telegram bot to seperate the network information of the Receiver from the status
+//    command. It will display the SSID, IP address, and MAC address of the Receiver. This is to help with determining what 
+//    Network the Receiver is connected to and its network details.
+
 // Receiver -- v1.3.05
 //  * Added the wifi network name to the Telegram /status command to show which network the Receiver is connected to. 
 //    This is to help with determining what Network the Receiver is connected to.
@@ -115,7 +120,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.05"
+#define receiver_version "v1.3.06"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -1430,15 +1435,16 @@ void command_superhelp (String chat_id, String text){
   runningText += "\n";
   runningText += " /_RESET    - Receiver Reset";
   runningText += "\n";
+  runningText += " /_NETWORK  - Receiver Network Information";
+  runningText += "\n";
   runningText += " /help      - Available commands";
   runningText += "\n";
   runningText += " /superhelp - SuperUser commands";
   bot.sendMessage(chat_id,runningText,"");
 }
 
-
-//  /status command
-void command_status (String chat_id,String text) {
+//  /_NETWORK command
+void command_network (String chat_id,String text) {
   String runningText = "Receiver Network: ";
   runningText +=  WiFi.SSID();
   runningText += "\nReceiver IP Address: " ; 
@@ -1449,7 +1455,12 @@ void command_status (String chat_id,String text) {
   runningText +=  WiFi.subnetMask().toString();
   runningText += "\nReceiver MAC Address: " ;
   runningText +=  WiFi.macAddress();
-  runningText += "\n";
+  bot.sendMessage(chat_id,runningText,"");
+}
+
+//  /status command
+void command_status (String chat_id,String text) {
+  String runningText = "Gilboa Water Temperature \n";
   
   for (int i = 0; i < 14; i++) {
   runningText += "\n";
@@ -1758,6 +1769,7 @@ void handleNewMessages(int numNewMessages)
     if (text == "/WDT_off") command_WDT_off (chat_id,text);
     if (text == "/_UPDATE") command_update(chat_id,text);
     if (text == "/_RESET") command_reset(chat_id,text);
+    if (text == "/_NETWORK") command_network(chat_id,text);
     if (text == "/superhelp") command_superhelp(chat_id,text);
   }
 }
