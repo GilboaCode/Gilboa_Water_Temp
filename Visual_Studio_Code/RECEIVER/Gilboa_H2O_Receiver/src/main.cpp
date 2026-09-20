@@ -1,3 +1,7 @@
+
+// Receiver -- v1.3.07
+//  * Added a time of last update to be displayed on /status command in Telegram.
+//
 // Receiver -- v1.3.06
 //  * Added a new command (/@NETWORK@) to the Telegram bot to seperate the network information of the Receiver from the status
 //    command. It will display the SSID, IP address, and MAC address of the Receiver. This is to help with determining what 
@@ -120,7 +124,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.06"
+#define receiver_version "v1.3.07"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -175,6 +179,8 @@ String password = "";
 #define BOT_TOKEN_Debug "8328269756:AAGSF-JlY4pAeiHQWRxxzP-bReZdUqOJZxY"
 WiFiClientSecure secured_client;
 UniversalTelegramBot bot(BOT_TOKEN, secured_client);
+
+
 
 // Gmail SMTP Server Settings
 #define SMTP_server "smtp.gmail.com"
@@ -250,7 +256,13 @@ String recipient_emails[6] = {
 
 // Real time
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);  // UTC offset 0, update every 60s
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 60000);  // UTC offset -4 hours, update every 60s
+int hour;
+int minute ;
+int second ;
+int year;
+int month;
+int day ;
 
 // Sender Water Detector 
 String water_top_detected = "N/A";
@@ -1458,10 +1470,35 @@ void command_network (String chat_id,String text) {
   bot.sendMessage(chat_id,runningText,"");
 }
 
+// Update the time of day and date from the NTP server and store in global variables
+void updateTime() {
+  timeClient.update();
+  
+  // Get Time
+  hour = timeClient.getHours();
+  minute = timeClient.getMinutes();
+  second = timeClient.getSeconds();
+  
+  // Get Date
+  time_t epoch = timeClient.getEpochTime();
+  struct tm *ptm = localtime((time_t *)&epoch);
+  
+  // Note: tm_year is years since 1900, tm_mon is 0-11
+  year = ptm->tm_year + 1900;
+  month = ptm->tm_mon + 1;
+  day = ptm->tm_mday;
+  
+  Serial.printf("Date: %04d-%02d-%02d Time: %02d:%02d:%02d\n", 
+                year, month, day, hour, minute, second);
+}
+
 //  /status command
 void command_status (String chat_id,String text) {
   String runningText = "Gilboa Water Temperature \n";
-  
+  runningText += "Last update: ";
+  char dateBuffer[80];
+  snprintf(dateBuffer, sizeof(dateBuffer), "%04d-%02d-%02d  %02d:%02d:%02d\n",year, month, day, hour, minute, second);
+  runningText += dateBuffer;   
   for (int i = 0; i < 14; i++) {
   runningText += "\n";
   runningText += "depth - " ;
@@ -1774,7 +1811,7 @@ void handleNewMessages(int numNewMessages)
   }
 }
 
-//
+
 // Telegram Bot - Check for new messages
 void checkTelegram() {
   if (WiFi.status() != WL_CONNECTED) return;
@@ -1797,6 +1834,8 @@ void checkTelegram() {
     }
   }
 }
+
+
 
 // Clear Sender fault flag
 void clearSenderFaultFlag (){
@@ -1988,6 +2027,8 @@ void ProcessTask(void *pvParameters){
           clearTCFaultFlag () ; // Clear the TC fault flag
         }
         if (cm == 'D') {
+          updateTime(); // Get the current time from NTP server
+
           // Serial.println("Data Packet");
           // Data packet: D,battery voltage,sender_version,SLEEP_MINUTES, OLED_FLAG, DEBUG_FLAG,Sender CPU temperature
           String battStr = newPacket.substring(c1 + 1, c2);
@@ -2492,6 +2533,8 @@ void handleUSBCommands() {
   }
 }
 
+
+
 // =============
 // === SETUP ===
 // =============
@@ -2536,6 +2579,8 @@ xTaskCreatePinnedToCore(
   if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
       Serial.println("Telegram Debug Mode Activated");
       bot = UniversalTelegramBot(BOT_TOKEN_Debug, secured_client);
+      bot.maxMessageLength = 4096;
+
   }
 
   OLED_On_Flag = true; // Turn on OLED display on startup
@@ -2586,11 +2631,6 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   Serial.print("Mac Address: ");
   Serial.println (WiFi.macAddress());
   secured_client.setInsecure();
-
-
-
-
-
   
   server.on("/", handleRoot);
   server.on("/romconfig", handleRomConfig);
@@ -2614,6 +2654,21 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   topWaterAlertSent = false; // Reset alert flag on startup
   bottomWaterAlertSent = false; // Reset alert flag on startup
   senderSeenFlag = false; // Reset sender seen flag on startup
+
+  // Setup NTP client for time synchronization
+  timeClient.begin();
+  timeClient.update(); // Fetch time from server
+
+
+Serial.println("Testing Telegram bot connection...");
+
+if (bot.getMe()) {
+    Serial.println("Telegram getMe(): SUCCESS");
+} else {
+    Serial.println("Telegram getMe(): FAILED");
+}
+
+
 }
 
 
