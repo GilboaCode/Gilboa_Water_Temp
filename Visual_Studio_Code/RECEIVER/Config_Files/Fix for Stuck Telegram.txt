@@ -1,0 +1,26 @@
+Commands to kill WEBHOOKs
+
+curl "https://api.telegram.org/bot8328269756:AAGSF-JlY4pAeiHQWRxxzP-bReZdUqOJZxY/deleteWebhook?drop_pending_updates=true"
+curl "https://api.telegram.org/bot8328269756:AAGSF-JlY4pAeiHQWRxxzP-bReZdUqOJZxY/getWebhookInfo"
+
+
+
+curl "https://api.telegram.org/bot8820302613:AAHUGMsmcHJNaG1YZnqkC-uzV6Y8-I1HwvA/deleteWebhook?drop_pending_updates=true"
+curl "https://api.telegram.org/bot8820302613:AAHUGMsmcHJNaG1YZnqkC-uzV6Y8-I1HwvA/getWebhookInfo"
+
+
+// Gilboa_WaterTemp_Debug_bot - "8328269756:AAGSF-JlY4pAeiHQWRxxzP-bReZdUqOJZxY"
+// Gilboa_WaterTemp_bot - "8820302613:AAHUGMsmcHJNaG1YZnqkC-uzV6Y8-I1HwvA"
+
+
+NO WEBHOOKs
+ curl "https://api.telegram.org/bot8328269756:AAGSF-JlY4pAeiHQWRxxzP-bReZdUqOJZxY/getWebhookInfo"
+  {
+    "ok":true,
+    "result":{
+       "url":"",
+       "has_custom_certificate":false,
+       "pending_update_count":0,
+       "allowed_updates":["message","edited_message","channel_post","edited_channel_post"]
+     }
+  }

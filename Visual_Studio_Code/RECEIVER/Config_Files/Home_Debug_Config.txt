@@ -29,4 +29,5 @@ rom_table.10=
 rom_table.11=
 rom_table.12=
 rom_table.13=
+dst.mode=1
 ESP32_NVS_BACKUP_END

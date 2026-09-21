@@ -1,4 +1,12 @@
-
+// Receiver -- v1.3.08
+//  * Added Daylight savings time (DST) detection to the NTP time client to determine if the current time is in DST or not. 
+//    This is to allow for the correct time to be displayed on the OLED display and on the Telegram /status command. 
+//    The time is displayed in UTC and the offset is calculated based on the current date and time. The offset is then used 
+//    to set the time client to the correct time zone.
+//  * Added a new command to the configuration web interface to set the DST mode. The selection is made from a dropdown menu.
+//    The selection is 0 - No DST, 1 - DST Auto, 2 - DST all year. The default is 1 - DST Auto. The selection is saved in NVS 
+//    and loaded on startup.
+//
 // Receiver -- v1.3.07
 //  * Added a time of last update to be displayed on /status command in Telegram.
 //
@@ -16,7 +24,7 @@
 //    for long periods of time and heating up the Receiver.
 //  * Added new switch at GPIO19 called activateOLEDpb to activate the OLED display on the Receiver for 30 seconds.
 //  * Added a command to the Telegram bot to activate the OLED display on the Receiver for 30 seconds (/disp_on)).
-//  * Added two command to USB Terminal to BACKUP and RESTORE the NVS data to a file on the SD card. This is to allow 
+//  * Added three command to USB Terminal to BACKUP, RESTORE and PING the NVS data to a file on the SD card. This is to allow 
 //    for easy backup and restore of the Receiver configuration data.
 //  * Made the SSID and Password fixed in code. On power up it selects between two SSID's and passwords based on the 
 //    state of Debug mode input (GPIO4). If GPIO4 is shorted to ground it will use the debug SSID and password, if not 
@@ -124,7 +132,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.07"
+#define receiver_version "v1.3.08"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -177,8 +185,9 @@ String password = "";
 #define Telegram_Debug_Mode_Pin 4 // Short to ground to enable the Telegram tolken of Gilboa_WaterTemp_Debug_bot tolken
 #define BOT_TOKEN "8820302613:AAHUGMsmcHJNaG1YZnqkC-uzV6Y8-I1HwvA"
 #define BOT_TOKEN_Debug "8328269756:AAGSF-JlY4pAeiHQWRxxzP-bReZdUqOJZxY"
+String Active_Bot_Token = BOT_TOKEN; // Default to the main bot token, can be changed to the debug bot token if the debug mode pin is shorted to ground 
 WiFiClientSecure secured_client;
-UniversalTelegramBot bot(BOT_TOKEN, secured_client);
+UniversalTelegramBot bot(Active_Bot_Token, secured_client);
 
 
 
@@ -256,13 +265,16 @@ String recipient_emails[6] = {
 
 // Real time
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 60000);  // UTC offset -4 hours, update every 60s
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -5 * 3600 , 60000);  // UTC offset -5 hours, update every 60s
 int hour;
 int minute ;
 int second ;
 int year;
 int month;
 int day ;
+int UTCoffset;
+bool daylight_saving_time_flag ; // True- Enabled, False - Disabled. This is to allow the operator to turn off DST detection if the operator does not want to use this feature. The default is DST detection on. This variable is stored in NVS and is loaded on startup.
+int DayLightSavingTimeMode = 0; // 0 = No DST , 1 = DST Auto, 2 = DST all year
 
 // Sender Water Detector 
 String water_top_detected = "N/A";
@@ -487,6 +499,22 @@ void saveRomTable() {
   prefs.end();
 }
 
+void loadDSTMode() {
+  prefs.begin("dst", true);
+  DayLightSavingTimeMode = prefs.getInt("mode", 1); // Default to 1 (DST Auto) if not set
+  prefs.end();
+  Serial.printf("Loaded DST mode: %d\n", DayLightSavingTimeMode);
+}
+
+void saveDSTMode() {
+  prefs.begin("dst", false);
+  prefs.putInt("mode", DayLightSavingTimeMode);
+  prefs.end();
+  Serial.printf("Saved DST mode: %d\n", DayLightSavingTimeMode);
+}
+
+
+
 bool isValidRom(String rom) {
   rom.trim();
   if (rom.length() < 23) return false;
@@ -527,6 +555,36 @@ void addUniqueRom(String rom) {
   rom.toUpperCase(); rom.trim();
   if (uniqueRomCount < 14 && isRomUnique(rom)) uniqueRoms[uniqueRomCount++] = rom;
 }
+
+
+// ======================================
+// Calendar and Time Functions
+// ======================================
+
+// Returns 0 (Sunday) through 6 (Saturday)
+int dayOfWeek(int year, int month, int day) {
+    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    if (month < 3) year--;
+    return (year + year / 4 - year / 100 + year / 400 + t[month - 1] + day) % 7;
+}
+
+// Returns the day-of-month for the nth Sunday (1-indexed) of a given month
+int nthSunday(int year, int month, int n) {
+    int firstDow = dayOfWeek(year, month, 1);
+    int firstSunday = (7 - firstDow) % 7 + 1;
+    return firstSunday + (n - 1) * 7;
+}
+
+// Set the DST flag if in the correct range for the year, month and day.
+void getDSTOffset(int year, int month, int day) {
+    int dstStart = 3 * 100 + nthSunday(year, 3, 2);  // 2nd Sunday in March
+    int dstEnd   = 11 * 100 + nthSunday(year, 11, 1); // 1st Sunday in November
+    int today    = month * 100 + day;
+    daylight_saving_time_flag = (today >= dstStart && today < dstEnd) ? true : false;
+    return ;
+}
+
+
 
 // === MAIN PAGE  ===
 void handleRoot() {
@@ -698,6 +756,7 @@ for (int i = 0; i < 14; i++) {
 void handleRomConfig() {
   float newMin ;
   float newMax;
+  int newDST;
 
   server.sendHeader("Content-Type", "text/html; charset=utf-8");
 
@@ -731,6 +790,13 @@ void handleRomConfig() {
         graphMaxY = newMax;
         saveGraphLimits();
       }
+    }
+
+    // Daylight Savings Time
+    if (server.hasArg("dst_mode") ) {
+      newDST = server.arg("dst_mode").toFloat();
+       DayLightSavingTimeMode = newDST;
+      saveDSTMode();
     }
 
     // POST URL
@@ -986,6 +1052,7 @@ void handleRomConfig() {
 
   html += "</div>";  // end side-by-side for Sender + HTTP
 
+  /*
   // New separate row below: Water Detection Recipients
   html += "<fieldset id='recipientsFieldset' style='margin-top:20px;'>";
   html += "<legend>Water Detection Email Recipients (up to 6)</legend>";
@@ -1009,6 +1076,72 @@ void handleRomConfig() {
   html += "</div>";
   html += "</form>";
   html += "</fieldset>";
+  */
+
+    // === Water Detection Recipients + DST Settings ===
+  html += "<div class='side-by-side'>";
+
+  // Left box: Water Detection Recipients
+  html += "<fieldset id='recipientsFieldset'>";
+  html += "<legend>Water Detection Email Recipients (up to 6)</legend>";
+  html += "<form method='post' id='recipientsForm'>";
+
+  for (int i = 0; i < 6; i++) {
+    html += "<div class='input-row' style='margin-bottom:8px;'>";
+    html += "<label>Recipient ";
+    html += String(i + 1);
+    html += ": </label>";
+    html += "<input type='text' name='recipient_email";
+    html += String(i);
+    html += "' id='recipientEmailInput";
+    html += String(i);
+    html += "' value='";
+    html += recipient_emails[i];
+    html += "' style='width:300px;' onchange='checkRecipientsChanges()'>";
+    html += "</div>";
+  }
+
+  html += "<div class='input-row' style='margin-top:15px;'>";
+  html += "<input type='submit' id='recipientsSubmit' value='Update Recipient Emails' style='margin-left:15px;'>";
+  html += "</div>";
+
+  html += "</form>";
+  html += "</fieldset>";
+
+
+  // Right box: Daylight Saving Time
+  html += "<fieldset id='dstFieldset'>";
+  html += "<legend>Daylight Saving Time</legend>";
+  html += "<form method='post' id='dstForm'>";
+
+  html += "<div class='input-row'>";
+  html += "<label>DST Mode: </label>";
+
+  html += "<select name='dst_mode' id='dstModeSelect' onchange='checkDSTChanges()'>";
+
+  html += "<option value='0'";
+  html += String(DayLightSavingTimeMode == 0 ? " selected" : "");
+  html += ">No DST</option>";
+
+  html += "<option value='1'";
+  html += String(DayLightSavingTimeMode == 1 ? " selected" : "");
+  html += ">DST Auto</option>";
+
+  html += "<option value='2'";
+  html += String(DayLightSavingTimeMode == 2 ? " selected" : "");
+  html += ">DST All Year</option>";
+
+  html += "</select>";
+
+  html += "<input type='submit' id='dstSubmit' value='Update DST' style='margin-left:15px;'>";
+
+  html += "</div>";
+
+  html += "</form>";
+  html += "</fieldset>";
+
+  html += "</div>";  // end Recipients + DST side-by-side
+
 
   // === JavaScript for all forms ===
   html += "<script>";
@@ -1097,6 +1230,7 @@ void handleRomConfig() {
   html += "'";
   html += "];";
 
+
   // Loop through each input and compare
   html += "  for (let i = 0; i < 6; i++) {";
   html += "    const input = document.getElementById('recipientEmailInput' + i);";
@@ -1113,12 +1247,27 @@ void handleRomConfig() {
   html += "  submit.className = changed ? 'changed-submit' : '';";
   html += "}";
 
+
+  // DST changes
+  html += "function checkDSTChanges() {";
+  html += "  const submit = document.getElementById('dstSubmit');";
+  html += "  const dstVal = document.getElementById('dstModeSelect').value;";
+  html += "  const origDst = '";
+  html += String(DayLightSavingTimeMode);
+  html += "';";
+  html += "  const changed = (dstVal !== origDst);";
+  html += "  submit.className = changed ? 'changed-submit' : '';";
+  html += "}";
+
+
+
   // Reset buttons on submit
   html += "document.getElementById('graphForm').addEventListener('submit', () => { document.getElementById('graphSubmit').className = ''; });";
   html += "document.getElementById('operatorForm').addEventListener('submit', () => { document.getElementById('operatorSubmit').className = ''; });";
   html += "document.getElementById('httpForm').addEventListener('submit', () => { document.getElementById('httpSubmit').className = ''; });";
   html += "document.getElementById('senderForm').addEventListener('submit', () => { document.getElementById('senderSubmit').className = ''; });";
   html += "document.getElementById('recipientsForm').addEventListener('submit', () => { document.getElementById('recipientsSubmit').className = ''; });";
+  html += "document.getElementById('dstForm').addEventListener('submit', () => { document.getElementById('dstSubmit').className = ''; });";
 
   // Initial checks on load
   html += "checkGraphChanges();";
@@ -1126,6 +1275,7 @@ void handleRomConfig() {
   html += "checkHttpChanges();";
   html += "checkSenderChanges();";
   html += "checkRecipientsChanges();";
+  html += "checkDSTChanges();";
   html += "</script>";
 
   // JavaScript for ROM row submit buttons (unchanged)
@@ -1473,22 +1623,40 @@ void command_network (String chat_id,String text) {
 // Update the time of day and date from the NTP server and store in global variables
 void updateTime() {
   timeClient.update();
-  
-  // Get Time
-  hour = timeClient.getHours();
-  minute = timeClient.getMinutes();
-  second = timeClient.getSeconds();
-  
-  // Get Date
+
+    // Get Date
   time_t epoch = timeClient.getEpochTime();
-  struct tm *ptm = localtime((time_t *)&epoch);
-  
+
+
+ // Get adjusted date/time
+  struct tm *ptm = localtime(&epoch);  
+
   // Note: tm_year is years since 1900, tm_mon is 0-11
-  year = ptm->tm_year + 1900;
+  year  = ptm->tm_year + 1900;
   month = ptm->tm_mon + 1;
-  day = ptm->tm_mday;
-  
-  Serial.printf("Date: %04d-%02d-%02d Time: %02d:%02d:%02d\n", 
+  day   = ptm->tm_mday;
+
+  getDSTOffset(year, month, day); //determine if DST is in effect and set daylight_saving_time_flag accordingly
+
+      // Adjust for daylight saving time
+  if (DayLightSavingTimeMode == 1 && daylight_saving_time_flag || DayLightSavingTimeMode == 2) {
+    Serial.println("DST is in effect, adjusting time by +1 hour");
+    epoch += 3600;  // Add 1 hour
+  }else {
+    Serial.println("DST is not in effect, no adjustment needed");
+  }
+
+  //  Recalculate tm after changing epoch
+  ptm = localtime(&epoch);
+
+  year  = ptm->tm_year + 1900;
+  month = ptm->tm_mon + 1;
+  day   = ptm->tm_mday;
+
+  hour   = ptm->tm_hour;
+  minute = ptm->tm_min;
+  second = ptm->tm_sec;
+  Serial.printf("Date: %04d-%02d-%02d Time: %02d:%02d:%02d\n",
                 year, month, day, hour, minute, second);
 }
 
@@ -1499,6 +1667,8 @@ void command_status (String chat_id,String text) {
   char dateBuffer[80];
   snprintf(dateBuffer, sizeof(dateBuffer), "%04d-%02d-%02d  %02d:%02d:%02d\n",year, month, day, hour, minute, second);
   runningText += dateBuffer;   
+
+
   for (int i = 0; i < 14; i++) {
   runningText += "\n";
   runningText += "depth - " ;
@@ -1835,6 +2005,27 @@ void checkTelegram() {
   }
 }
 
+void checkTelegramWebhook() {
+  String url = "https://api.telegram.org/bot";
+  url += Active_Bot_Token;
+  url += "/getWebhookInfo";
+
+  HTTPClient http;
+  http.begin(secured_client, url);
+
+  int httpCode = http.GET();
+
+  Serial.print("Telegram getWebhookInfo HTTP code: ");
+  Serial.println(httpCode);
+
+  if (httpCode > 0) {
+    String response = http.getString();
+    Serial.println("Telegram Webhook Info:");
+    Serial.println(response);
+  }
+
+  http.end();
+}
 
 
 // Clear Sender fault flag
@@ -2116,8 +2307,9 @@ void exportNVSBackup() {
   loadPostUrl();
   loadOperatorVars();
   loadRomTable();
+  loadDSTMode();
 
-  Serial.println("ESP32_NVS_BACKUP_V1");
+  Serial.println("\nESP32_NVS_BACKUP_V1");
 
   // ----------------------------------------------------------
   // GRAPH
@@ -2184,8 +2376,14 @@ void exportNVSBackup() {
     Serial.println(romTable[i]);
   }
 
-  Serial.println("ESP32_NVS_BACKUP_END");
-  Serial.flush();
+  // ----------------------------------------------------------
+  // DST MODE
+  // ----------------------------------------------------------
+  Serial.print("dst.mode=");
+  Serial.println(DayLightSavingTimeMode);
+
+  Serial.println("ESP32_NVS_BACKUP_END\n");
+  //Serial.flush();
 }
 
 // ============================================================
@@ -2193,228 +2391,166 @@ void exportNVSBackup() {
 // Receives a backup from the PC over USB Serial
 // and writes the values into NVS.
 // ============================================================
-
 bool restoreNVSLine(String line) {
-
   line.trim();
-
   // Ignore blank lines
   if (line.length() == 0) {
     return true;
   }
-
   // Ignore header
   if (line == "ESP32_NVS_BACKUP_V1") {
     return true;
   }
-
   // Ignore end marker
   if (line == "ESP32_NVS_BACKUP_END") {
     return true;
   }
-
   // Find '='
   int equalsPos = line.indexOf('=');
-
   if (equalsPos < 0) {
     return false;
   }
-
   String variable = line.substring(0, equalsPos);
   String value    = line.substring(equalsPos + 1);
-
   variable.trim();
-
   // ----------------------------------------------------------
   // GRAPH
   // ----------------------------------------------------------
-
   if (variable == "graph.minY") {
-
     float val = value.toFloat();
-
     prefs.begin("graph", false);
     prefs.putFloat("minY", val);
     prefs.end();
-
     graphMinY = val;
     return true;
   }
-
   if (variable == "graph.maxY") {
-
     float val = value.toFloat();
-
     prefs.begin("graph", false);
     prefs.putFloat("maxY", val);
     prefs.end();
-
     graphMaxY = val;
     return true;
   }
-
   // ----------------------------------------------------------
   // EMAIL
   // ----------------------------------------------------------
-
   if (variable == "email.recipient_email") {
-
     prefs.begin("email", false);
     prefs.putString("recipient_email", value);
     prefs.end();
-
     Recipient_email = value;
     return true;
   }
-
   // ----------------------------------------------------------
   // RECIPIENTS
   // ----------------------------------------------------------
-
   for (int i = 0; i < 6; i++) {
-
     String expected = "recipients.email";
     expected += String(i);
-
     if (variable == expected) {
-
       prefs.begin("recipients", false);
-
       String key = "email";
       key += String(i);
-
       prefs.putString(key.c_str(), value);
-
       prefs.end();
-
       recipient_emails[i] = value;
-
       return true;
     }
   }
-
   // ----------------------------------------------------------
   // SENDER
   // ----------------------------------------------------------
-
   if (variable == "sender.email") {
-
     prefs.begin("sender", false);
     prefs.putString("email", value);
     prefs.end();
-
     sender_email = value;
     return true;
   }
-
   if (variable == "sender.password") {
-
     prefs.begin("sender", false);
     prefs.putString("password", value);
     prefs.end();
-
     sender_password = value;
     return true;
   }
-
   // ----------------------------------------------------------
   // POST URL
   // ----------------------------------------------------------
-
   if (variable == "post.url") {
-
     prefs.begin("post", false);
     prefs.putString("url", value);
     prefs.end();
-
     postUrl = value;
     return true;
   }
-
   // ----------------------------------------------------------
   // OPERATOR
   // ----------------------------------------------------------
-
   if (variable == "operator.aux_sleep") {
-
     int val = value.toInt();
-
     prefs.begin("operator", false);
     prefs.putInt("aux_sleep", val);
     prefs.end();
-
     aux_sleep_minutes = val;
     old_aux_sleep_minutes = val;
-
     return true;
   }
-
   if (variable == "operator.oled_flag") {
-
     bool val = (value.toInt() != 0);
-
     prefs.begin("operator", false);
     prefs.putBool("oled_flag", val);
     prefs.end();
-
     OLED_flag_from_receiver = val;
     old_OLED_flag_from_receiver = val;
-
     return true;
   }
-
   if (variable == "operator.debug_flag") {
-
     bool val = (value.toInt() != 0);
-
     prefs.begin("operator", false);
     prefs.putBool("debug_flag", val);
     prefs.end();
-
     debug_flag_from_receiver = val;
     old_debug_flag_from_receiver = val;
-
     return true;
   }
-
   if (variable == "operator.watchdog_en") {
     bool val = (value.toInt() != 0);
-
     prefs.begin("operator", false);
     prefs.putBool("watchdog_en", val);
     prefs.end();
-
     watchdogEnableFlag = val;
-
     return true;
   }
-
   // ----------------------------------------------------------
   // ROM TABLE
   // ----------------------------------------------------------
-
   for (int i = 0; i < 14; i++) {
-
     String expected = "rom_table.";
     expected += String(i);
-
     if (variable == expected) {
-
       prefs.begin("rom_table", false);
-
       String key = String(i);
       prefs.putString(key.c_str(), value);
-
       prefs.end();
-
       romTable[i] = value;
       romTable[i].toUpperCase();
       romTable[i].trim();
-
       return true;
     }
   }
-
+  // ----------------------------------------------------------
+  // DST MODE
+  // ----------------------------------------------------------
+  if (variable == "dst.mode") {
+    int val = value.toInt();
+    prefs.begin("dst", false);
+    prefs.putInt("mode", val);
+    prefs.end();
+    DayLightSavingTimeMode = val;
+    return true;
+  } 
   // Unknown variable
   return false;
 }
@@ -2422,88 +2558,64 @@ bool restoreNVSLine(String line) {
 // ============================================================
 // Process incoming USB backup
 // ============================================================
-
 void importNVSBackup() {
-
   String line;
   bool receiving = false;
   int goodLines = 0;
   int badLines = 0;
-
   Serial.println("READY_FOR_NVS_BACKUP");
   Serial.flush();
-
   unsigned long lastDataTime = millis();
-
   while (true) {
-
     if (Serial.available()) {
-
       line = Serial.readStringUntil('\n');
       line.trim();
-
       lastDataTime = millis();
-
       // Start marker
       if (line == "ESP32_NVS_BACKUP_V1") {
-
         receiving = true;
         goodLines = 0;
         badLines = 0;
-
         Serial.println("BACKUP_START_OK");
         continue;
       }
-
       // Don't process anything until header received
       if (!receiving) {
         continue;
       }
-
       // End marker
       if (line == "ESP32_NVS_BACKUP_END") {
-
         Serial.println("BACKUP_END_OK");
-
         romTableLoaded = true;
-
         Serial.print("GOOD_LINES=");
         Serial.println(goodLines);
-
         Serial.print("BAD_LINES=");
         Serial.println(badLines);
-
         Serial.println("NVS_RESTORE_COMPLETE");
         Serial.flush();
-
         return;
       }
-
       // Process variable
       if (restoreNVSLine(line)) {
         goodLines++;
       }
       else {
         badLines++;
-
         Serial.print("BAD_LINE=");
         Serial.println(line);
       }
     }
-
     // Safety timeout: 30 seconds without data
     if (receiving && (millis() - lastDataTime > 30000)) {
-
       Serial.println("NVS_RESTORE_TIMEOUT");
       Serial.flush();
-
       return;
     }
-
     delay(1);
   }
 }
 
+/*
 // ============================================================
 // USB command handler
 // ============================================================
@@ -2517,28 +2629,116 @@ void handleUSBCommands() {
   command.trim();
   command.toUpperCase();
   if (command == "BACKUP") {
-    Serial.println("BACKUP_BEGIN");
+    Serial.println("\nBACKUP_BEGIN");
     exportNVSBackup();
     Serial.println("BACKUP_COMPLETE");
     Serial.flush();
   }
   else if (command == "RESTORE") {
-  //  Serial.println("RESTORE_BEGIN");
+    Serial.println("\nRESTORE_BEGIN");
+    Serial.println("Input NVS backup data now");
     importNVSBackup();
-  //    Serial.println("RESTORE_COMPLETE");
+    Serial.println("RESTORE_COMPLETE");
   }
   else if (command == "PING") {
-    Serial.println("ESP32_READY");
+    Serial.println("\nESP32_READY");
     Serial.flush();
+  }  
+  else if (command == "?") {
+    Serial.println("\nBACKUP");
+    Serial.println("RESTORE");
+    Serial.println("PING");
+    Serial.println("?");
+    Serial.flush();
+  }
+}
+*/
+
+// ============================================================
+// USB command handler
+// ============================================================
+void handleUSBCommands() {
+
+  static String command = "";
+
+  while (Serial.available()) {
+
+    char c = Serial.read();
+
+    // Enter / Return
+    if (c == '\n' || c == '\r') {
+
+      if (command.length() == 0) {
+        continue;
+      }
+
+      Serial.println();
+
+      String cmd = command;
+      command = "";
+
+      cmd.trim();
+      cmd.toUpperCase();
+
+      if (cmd == "BACKUP") {
+        Serial.println("BACKUP_BEGIN");
+        exportNVSBackup();
+        Serial.println("BACKUP_COMPLETE");
+        Serial.flush();
+      }
+
+      else if (cmd == "RESTORE") {
+        Serial.println("RESTORE_BEGIN");
+        Serial.println("Input NVS backup data now");
+        importNVSBackup();
+        Serial.println("RESTORE_COMPLETE");
+      }
+
+      else if (cmd == "PING") {
+        Serial.println("ESP32_READY");
+        Serial.flush();
+      }
+
+      else if (cmd == "?") {
+        Serial.println("BACKUP");
+        Serial.println("RESTORE");
+        Serial.println("PING");
+        Serial.println("?");
+        Serial.flush();
+      }
+
+      else {
+        Serial.print("Unknown command: ");
+        Serial.println(cmd);
+      }
+    }
+
+    // Backspace
+    else if (c == '\b' || c == 127) {
+
+      if (command.length() > 0) {
+        command.remove(command.length() - 1);
+
+        // Erase character from terminal
+        Serial.print("\b \b");
+      }
+    }
+
+    // Normal character
+    else if (c >= 32 && c <= 126) {
+
+      command += c;
+
+      // Echo character
+      Serial.write(c);
+    }
   }
 }
 
 
-
-// =============
-// === SETUP ===
-// =============
-
+// =====================================================================
+// === SETUP ===========================================================
+// =====================================================================
 void setup() {
   esp_log_level_set("Preferences", ESP_LOG_NONE); 
   Serial.begin(115200); delay(1000);
@@ -2578,9 +2778,8 @@ xTaskCreatePinnedToCore(
   pinMode (Telegram_Debug_Mode_Pin, INPUT_PULLUP ); // Directs which Telegram Ttolken to use (Debug vs Production)
   if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
       Serial.println("Telegram Debug Mode Activated");
-      bot = UniversalTelegramBot(BOT_TOKEN_Debug, secured_client);
-      bot.maxMessageLength = 4096;
-
+      Active_Bot_Token = BOT_TOKEN_Debug;
+      bot = UniversalTelegramBot(Active_Bot_Token, secured_client);
   }
 
   OLED_On_Flag = true; // Turn on OLED display on startup
@@ -2647,6 +2846,7 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   loadRecipients();  // load multiple recipients
   loadSenderCreds(); // Loaded sender credentials
   loadFailVariables(); // Load failed communication flags
+  loadDSTMode(); // Load DST Mode
   resetVariablesFlag = true; // Force sending operator vars on first send
 
   updateOLED();   // Update the OLED display with initial information
@@ -2659,16 +2859,15 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   timeClient.begin();
   timeClient.update(); // Fetch time from server
 
-
-Serial.println("Testing Telegram bot connection...");
-
-if (bot.getMe()) {
-    Serial.println("Telegram getMe(): SUCCESS");
-} else {
-    Serial.println("Telegram getMe(): FAILED");
-}
-
-
+ 
+  // Veerify Telegram bot connection
+  Serial.println("Testing Telegram bot connection...");
+  if (bot.getMe()) {
+      Serial.println("Telegram getMe(): SUCCESS");
+  } else {
+      Serial.println("Telegram getMe(): FAILED");
+  }
+  checkTelegramWebhook();
 }
 
 

@@ -29,4 +29,5 @@ rom_table.10=28 70 F6 BA 00 00 00 36
 rom_table.11=28 57 B8 B4 00 00 00 5B
 rom_table.12=28 54 4E B4 00 00 00 38
 rom_table.13=28 CE A0 B4 00 00 00 3E
+dst.mode=1
 ESP32_NVS_BACKUP_END
