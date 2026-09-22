@@ -2618,7 +2618,7 @@ void importNVSBackup() {
   }
 }
 
-/*
+
 // ============================================================
 // USB command handler
 // ============================================================
@@ -2655,88 +2655,7 @@ void handleUSBCommands() {
     Serial.flush();
   }
 }
-*/
 
-// ============================================================
-// USB command handler
-// ============================================================
-void handleUSBCommands() {
-
-  static String command = "";
-
-  while (Serial.available()) {
-
-    char c = Serial.read();
-
-    // Enter / Return
-    if (c == '\n' || c == '\r') {
-
-      if (command.length() == 0) {
-        continue;
-      }
-
-      Serial.println();
-
-      String cmd = command;
-      command = "";
-
-      cmd.trim();
-      cmd.toUpperCase();
-
-      if (cmd == "BACKUP") {
-        Serial.println("BACKUP_BEGIN");
-        exportNVSBackup();
-        Serial.println("BACKUP_COMPLETE");
-        Serial.flush();
-      }
-
-      else if (cmd == "RESTORE") {
-        Serial.println("RESTORE_BEGIN");
-        Serial.println("Input NVS backup data now");
-        importNVSBackup();
-        Serial.println("RESTORE_COMPLETE");
-      }
-
-      else if (cmd == "PING") {
-        Serial.println("ESP32_READY");
-        Serial.flush();
-      }
-
-      else if (cmd == "?") {
-        Serial.println("BACKUP");
-        Serial.println("RESTORE");
-        Serial.println("PING");
-        Serial.println("?");
-        Serial.flush();
-      }
-
-      else {
-        Serial.print("Unknown command: ");
-        Serial.println(cmd);
-      }
-    }
-
-    // Backspace
-    else if (c == '\b' || c == 127) {
-
-      if (command.length() > 0) {
-        command.remove(command.length() - 1);
-
-        // Erase character from terminal
-        Serial.print("\b \b");
-      }
-    }
-
-    // Normal character
-    else if (c >= 32 && c <= 126) {
-
-      command += c;
-
-      // Echo character
-      Serial.write(c);
-    }
-  }
-}
 
 
 // =====================================================================
