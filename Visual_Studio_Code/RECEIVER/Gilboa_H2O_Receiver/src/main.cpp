@@ -1982,6 +1982,7 @@ void handleNewMessages(int numNewMessages)
 }
 
 
+
 // Telegram Bot - Check for new messages
 void checkTelegram() {
   if (WiFi.status() != WL_CONNECTED) return;
@@ -2218,6 +2219,8 @@ void ProcessTask(void *pvParameters){
           clearTCFaultFlag () ; // Clear the TC fault flag
         }
         if (cm == 'D') {
+          updateTime(); // Get the current time from NTP server
+
           updateTime(); // Get the current time from NTP server
 
           // Serial.println("Data Packet");
