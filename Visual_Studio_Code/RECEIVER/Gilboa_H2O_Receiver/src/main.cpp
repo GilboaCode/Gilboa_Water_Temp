@@ -1,3 +1,10 @@
+// Receiver -- v1.3.09
+//  * Added a new command (/_HISTORY) to the Telegram bot to display the history of the Receiver. 
+//    The times of the last received packets were received from the Sender, and when the receiver was reset.
+//  * Fixed the Get Date and Time of last update.
+//  * After 60 attemts to connect to WiFi, the Receiver will reset itself. This is to prevent the Receiver from being stuck in 
+//    a loop trying to connect to WiFi and not being able to recover.
+//
 // Receiver -- v1.3.08
 //  * Added Daylight savings time (DST) detection to the NTP time client to determine if the current time is in DST or not. 
 //    This is to allow for the correct time to be displayed on the OLED display and on the Telegram /status command. 
@@ -11,7 +18,7 @@
 //  * Added a time of last update to be displayed on /status command in Telegram.
 //
 // Receiver -- v1.3.06
-//  * Added a new command (/@NETWORK@) to the Telegram bot to seperate the network information of the Receiver from the status
+//  * Added a new command (/_NETWORK) to the Telegram bot to seperate the network information of the Receiver from the status
 //    command. It will display the SSID, IP address, and MAC address of the Receiver. This is to help with determining what 
 //    Network the Receiver is connected to and its network details.
 
@@ -60,10 +67,10 @@
 //  * Modified the location of the firmware.bin to be in the "latest" folder of the GitHub repository to allow for future versioning of the firmware.
 //
 // Receiver -- V1.3.00
-//  * Added a new command (/@UPDATE@)to the Telegram bot to update the Receiver remotely. It will download and install the latest firmware from the GitHub repository 
+//  * Added a new command (/_UPDATE)to the Telegram bot to update the Receiver remotely. It will download and install the latest firmware from the GitHub repository 
 //
 // Receiver -- V1.2.05
-//  * Added a new command (/@RESET@)to the Telegram bot to reset the Receiver remotely. The command is /reset and it will restart the Receiver when issued.*
+//  * Added a new command (/_RESET)to the Telegram bot to reset the Receiver remotely. The command is /reset and it will restart the Receiver when issued.*
 //  * Moved all the LoRa xmitt/rcve interrupts to a single core.
 //
 // Receiver -- V1.2.04
@@ -132,7 +139,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.08"
+#define receiver_version "v1.3.09"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -265,7 +272,7 @@ String recipient_emails[6] = {
 
 // Real time
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", -5 * 3600 , 60000);  // UTC offset -5 hours, update every 60s
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 0 , 60000);  // UTC offset 0 hours, update every 60s
 int hour;
 int minute ;
 int second ;
@@ -275,6 +282,10 @@ int day ;
 int UTCoffset;
 bool daylight_saving_time_flag ; // True- Enabled, False - Disabled. This is to allow the operator to turn off DST detection if the operator does not want to use this feature. The default is DST detection on. This variable is stored in NVS and is loaded on startup.
 int DayLightSavingTimeMode = 0; // 0 = No DST , 1 = DST Auto, 2 = DST all year
+#define packetTimeBufferSize 45
+String last30PacketTimes[packetTimeBufferSize]; // Buffer of the last packet times received from the Sender
+int last30PacketTimesIndex = 0; // pointer to the next index in the last30PacketTimes array to store the next packet time
+
 
 // Sender Water Detector 
 String water_top_detected = "N/A";
@@ -395,6 +406,33 @@ void saveRecipients() {
   Serial.println("Saved recipient emails to NVS");
 }
 
+void loadLast30PacketTimes(){
+  // Load the last  packet times and the current index to NVS 
+  prefs.begin("last30", true);
+  for (int i = 0; i < packetTimeBufferSize; i++) {
+    String key = "time";
+    key += String(i);
+    last30PacketTimes[i] = prefs.getString(key.c_str(), "");
+    Serial.printf("Loaded last30PacketTimes[%d]: %s\n", i, last30PacketTimes[i].c_str());
+  }
+  last30PacketTimesIndex = prefs.getInt("index", 0);
+  prefs.end();
+  Serial.println("Loaded last " + String(packetTimeBufferSize) + " packet times from NVS");
+}
+
+void saveLast30PacketTimes() {
+  // Save the last 30 packet times and the current index to NVS 
+  prefs.begin("last30", false);
+  for (int i = 0; i < packetTimeBufferSize; i++) {
+    String key = "time";
+    key += String(i);
+    prefs.putString(key.c_str(), last30PacketTimes[i]);
+  }
+  prefs.putInt("index", last30PacketTimesIndex);
+  prefs.end();
+  Serial.println("Saved last " + String(packetTimeBufferSize) + " packet times to NVS");
+  
+}
 
 void loadSenderCreds() {
   prefs.begin("sender", true);
@@ -1599,6 +1637,8 @@ void command_superhelp (String chat_id, String text){
   runningText += "\n";
   runningText += " /_NETWORK  - Receiver Network Information";
   runningText += "\n";
+  runningText += " /_HISTORY  - Receiver History Information";
+  runningText += "\n";
   runningText += " /help      - Available commands";
   runningText += "\n";
   runningText += " /superhelp - SuperUser commands";
@@ -1620,24 +1660,51 @@ void command_network (String chat_id,String text) {
   bot.sendMessage(chat_id,runningText,"");
 }
 
-// Update the time of day and date from the NTP server and store in global variables
-void updateTime() {
-  timeClient.update();
+// Received istory
+void command_receiveHistory(String chat_id,String text){
+  String runningText = "Last " + String(packetTimeBufferSize) + " Packet Update Times \n";
+  // Print the last  packet times in reverse order (most recent first)
+  for (int i = 0; i < packetTimeBufferSize; i++) {
+    int index = (last30PacketTimesIndex - 1 - i + packetTimeBufferSize) % packetTimeBufferSize; // wrap around
+    if (last30PacketTimes[index] != "") {
+      runningText += last30PacketTimes[index];
+      runningText += "\n";
+      if (runningText.length() > 4096) { // Telegram message limit
+        Serial.println("Telegram message truncated");
+      }
+    }
+  }
+  bot.sendMessage(chat_id, runningText, "");
+  Serial.println("Length of Telegram Bot message: " + String(runningText.length()));
+  }
 
+
+// /_HISTORY command
+void command_history (String chat_id,String text) {
+//  command_network (chat_id,text);
+//  command_rom (chat_id,text);
+//  command_status (chat_id,text);
+//  command_ota (chat_id,text);
+//  command_superhelp (chat_id,text);
+  command_receiveHistory(chat_id,text);
+
+}
+
+
+// Update the time of day and date from the NTP server and store in global variables
+void updateTime(String (msg_string) ) {
+  timeClient.update();
     // Get Date
   time_t epoch = timeClient.getEpochTime();
-
-
  // Get adjusted date/time
   struct tm *ptm = localtime(&epoch);  
-
   // Note: tm_year is years since 1900, tm_mon is 0-11
   year  = ptm->tm_year + 1900;
   month = ptm->tm_mon + 1;
   day   = ptm->tm_mday;
-
+  // Adjust for EST
+  epoch -= 5 * 3600; // Subtract 5 hours for EST
   getDSTOffset(year, month, day); //determine if DST is in effect and set daylight_saving_time_flag accordingly
-
       // Adjust for daylight saving time
   if (DayLightSavingTimeMode == 1 && daylight_saving_time_flag || DayLightSavingTimeMode == 2) {
     Serial.println("DST is in effect, adjusting time by +1 hour");
@@ -1645,20 +1712,27 @@ void updateTime() {
   }else {
     Serial.println("DST is not in effect, no adjustment needed");
   }
-
   //  Recalculate tm after changing epoch
   ptm = localtime(&epoch);
-
   year  = ptm->tm_year + 1900;
   month = ptm->tm_mon + 1;
   day   = ptm->tm_mday;
-
   hour   = ptm->tm_hour;
   minute = ptm->tm_min;
   second = ptm->tm_sec;
+  // Save the time string in the last30PacketTimes
+  char buildBuffer[80];
+snprintf(buildBuffer, sizeof(buildBuffer), 
+         "%04d-%02d-%02d  %02d:%02d:%02d", 
+         year , month , day, 
+         hour, minute, second);
+  last30PacketTimes[last30PacketTimesIndex] = String(buildBuffer) + " - " + msg_string; 
+  last30PacketTimesIndex = (last30PacketTimesIndex + 1) % packetTimeBufferSize; // wrap around
   Serial.printf("Date: %04d-%02d-%02d Time: %02d:%02d:%02d\n",
                 year, month, day, hour, minute, second);
+  saveLast30PacketTimes(); // Save the updated packet times to NVS
 }
+
 
 //  /status command
 void command_status (String chat_id,String text) {
@@ -1977,6 +2051,7 @@ void handleNewMessages(int numNewMessages)
     if (text == "/_UPDATE") command_update(chat_id,text);
     if (text == "/_RESET") command_reset(chat_id,text);
     if (text == "/_NETWORK") command_network(chat_id,text);
+    if (text == "/_HISTORY") command_history(chat_id,text);
     if (text == "/superhelp") command_superhelp(chat_id,text);
   }
 }
@@ -2219,9 +2294,7 @@ void ProcessTask(void *pvParameters){
           clearTCFaultFlag () ; // Clear the TC fault flag
         }
         if (cm == 'D') {
-          updateTime(); // Get the current time from NTP server
-
-          updateTime(); // Get the current time from NTP server
+          updateTime("Update"); // Get the current time from NTP server
 
           // Serial.println("Data Packet");
           // Data packet: D,battery voltage,sender_version,SLEEP_MINUTES, OLED_FLAG, DEBUG_FLAG,Sender CPU temperature
@@ -2734,9 +2807,15 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   WiFi.begin(ssid, password);
 
   // Wait for connection
+  int wifi_attempts = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    wifi_attempts++;
+    if (wifi_attempts >= 60) {
+      Serial.println("Failed to connect to WiFi - Reseting ESP32");
+      ESP.restart();
+    }
   }
 
   Serial.println();
@@ -2769,6 +2848,7 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   loadSenderCreds(); // Loaded sender credentials
   loadFailVariables(); // Load failed communication flags
   loadDSTMode(); // Load DST Mode
+  loadLast30PacketTimes(); // Load the last packet times from NVS
   resetVariablesFlag = true; // Force sending operator vars on first send
 
   updateOLED();   // Update the OLED display with initial information
@@ -2790,6 +2870,7 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
       Serial.println("Telegram getMe(): FAILED");
   }
   checkTelegramWebhook();
+  updateTime("Boot");
 }
 
 
