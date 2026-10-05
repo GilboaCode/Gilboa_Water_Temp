@@ -1,4 +1,5 @@
 Git and GitHub are used on all files within Gilboa_Water_Temp. After a file is modified:
+
 Save changes to your local directory (your directory should be identical to the one above).
 Stage all files.
 Commit the files with a message.
