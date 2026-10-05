@@ -15,7 +15,7 @@ __pycache__/
 *.kicad_prl
 *.kicad_prl-bak
 *-backups/
-**/history/
+KiCAD/.history/
 
 # OS files
 .DS_Store
