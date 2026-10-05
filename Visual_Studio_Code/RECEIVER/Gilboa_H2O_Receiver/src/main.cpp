@@ -4,6 +4,7 @@
 //  * Fixed the Get Date and Time of last update.
 //  * After 60 attemts to connect to WiFi, the Receiver will reset itself. This is to prevent the Receiver from being stuck in 
 //    a loop trying to connect to WiFi and not being able to recover.
+//  * Added a third WiFi connection when the Gilboa or Klopping network can not connect, Jeff's Android Hot Spot.
 //
 // Receiver -- v1.3.08
 //  * Added Daylight savings time (DST) detection to the NTP time client to determine if the current time is in DST or not. 
@@ -172,7 +173,9 @@
 String ssid_pd     = "Gilboa Guest";
 String password_pd = "DiveGilboa";
 
-
+// ---------- Alternate WiFi credentials Jeff's Android Hotspot ----------
+String ssid_alt     = "Galaxy S26 Ultra BF31";
+String password_alt = "z2knwvh3bckrhgs";
 
 // Debug WiFi credentials for testing
 String ssid_db     = "k-net";
@@ -2729,6 +2732,20 @@ void handleUSBCommands() {
   }
 }
 
+// Wait for connection
+bool waitForConnection() {
+int wifi_attempts = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    wifi_attempts++;
+    if (wifi_attempts >= 60) {
+      return (false); // Return false if not connected after 30 seconds
+    }
+  }
+  return (true); // Return true if connected
+}
+
 
 
 // =====================================================================
@@ -2785,7 +2802,6 @@ xTaskCreatePinnedToCore(
   Wire.begin(17, 18); Wire.setClock(100000);
   u8g2.begin();
 
-
 // Selecting either Gilboa or Debug credentials
 if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
   Serial.println("Using Debug WiFi credentials");
@@ -2799,24 +2815,23 @@ if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
 }
 
   WiFi.mode(WIFI_STA);
-
   Serial.print("Connecting to ");
   Serial.println(ssid);
-
-
   WiFi.begin(ssid, password);
-
-  // Wait for connection
-  int wifi_attempts = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    wifi_attempts++;
-    if (wifi_attempts >= 60) {
-      Serial.println("Failed to connect to WiFi - Reseting ESP32");
+  if (!waitForConnection()) {
+    Serial.println("Using Production WiFi credentials");
+    ssid     = ssid_alt;
+    password = password_alt;
+    WiFi.mode(WIFI_STA);
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+    WiFi.begin(ssid, password);
+    if (!waitForConnection()) {
+      Serial.println("WiFi connection failed. Restarting...");
       ESP.restart();
     }
   }
+
 
   Serial.println();
   Serial.print ("SSID: ");
