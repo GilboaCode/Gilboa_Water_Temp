@@ -5,6 +5,7 @@
 //  * After 60 attemts to connect to WiFi, the Receiver will reset itself. This is to prevent the Receiver from being stuck in 
 //    a loop trying to connect to WiFi and not being able to recover.
 //  * Added a third WiFi connection when the Gilboa or Klopping network can not connect, Jeff's Android Hot Spot.
+//  * Added WiFi connection diagnostics to the OLED display to show which network the Receiver is trying to connect to. 
 //
 // Receiver -- v1.3.08
 //  * Added Daylight savings time (DST) detection to the NTP time client to determine if the current time is in DST or not. 
@@ -167,15 +168,19 @@
 // ---------------------------------------
 // ---------- IP configurations ----------
 // ---------------------------------------
-// Gilboa_Water_Temperature project IP addresses
-//String ssid_pd     = "Office";
-//String password_pd = "FullTank#0412";
+
+// ---------- WiFi credentials Gilboa Guest ----------
 String ssid_pd     = "Gilboa Guest";
 String password_pd = "DiveGilboa";
 
-// ---------- Alternate WiFi credentials Jeff's Android Hotspot ----------
-String ssid_alt     = "Galaxy S26 Ultra BF31";
-String password_alt = "z2knwvh3bckrhgs";
+// ---------- Alternate 1 WiFi credentials Gilboa Office ----------
+//String ssid_alt1     =  "Office";
+String ssid_alt1     =  "OOffice";
+String password_alt1 = "FullTank#0412";
+
+// ---------- Alternate 2 WiFi credentials Jeff's Android Hotspot ----------
+String ssid_alt2     = "Galaxy S26 Ultra BF31";
+String password_alt2 = "z2knwvh3bckrhgs";
 
 // Debug WiFi credentials for testing
 String ssid_db     = "k-net";
@@ -1665,7 +1670,7 @@ void command_network (String chat_id,String text) {
 
 // Received istory
 void command_receiveHistory(String chat_id,String text){
-  String runningText = "Last " + String(packetTimeBufferSize) + " Packet Update Times \n";
+  String runningText = "Packet Update and Boot History \n";
   // Print the last  packet times in reverse order (most recent first)
   for (int i = 0; i < packetTimeBufferSize; i++) {
     int index = (last30PacketTimesIndex - 1 - i + packetTimeBufferSize) % packetTimeBufferSize; // wrap around
@@ -2732,8 +2737,24 @@ void handleUSBCommands() {
   }
 }
 
-// Wait for connection
+//  OLED Display Diagnostics
+void displayDiagnostics() {
+  String tempS = "WiFi: " ;
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  String tempstr = ssid; ;
+  tempS += tempstr;
+  u8g2.drawStr(0, 10, (tempS).c_str());
+  u8g2.sendBuffer();
+}
+
+// Wait for WiFi connection
 bool waitForConnection() {
+  WiFi.mode(WIFI_STA);
+  Serial.print("\nConnecting to ");
+  Serial.println(ssid);
+  displayDiagnostics();
+  WiFi.begin(ssid, password);
 int wifi_attempts = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -2802,36 +2823,43 @@ xTaskCreatePinnedToCore(
   Wire.begin(17, 18); Wire.setClock(100000);
   u8g2.begin();
 
-// Selecting either Gilboa or Debug credentials
-if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
-  Serial.println("Using Debug WiFi credentials");
-  ssid     = ssid_db;
-  password = password_db;
-
-} else {
-  Serial.println("Using Production WiFi credentials");
-  ssid     = ssid_pd;
-  password = password_pd;
-}
-
-  WiFi.mode(WIFI_STA);
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  if (!waitForConnection()) {
-    Serial.println("Using Production WiFi credentials");
-    ssid     = ssid_alt;
-    password = password_alt;
-    WiFi.mode(WIFI_STA);
-    Serial.print("Connecting to ");
-    Serial.println(ssid);
-    WiFi.begin(ssid, password);
+  String wifiSite = "";
+  // Selecting either Gilboa or Debug credentials
+  if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
+  //  Serial.println("Using Debug WiFi credentials");
+    wifiSite = "\nUsing Debug WiFi credentials\n";
+    ssid     = ssid_db;
+    password = password_db;
     if (!waitForConnection()) {
-      Serial.println("WiFi connection failed. Restarting...");
-      ESP.restart();
+      wifiSite = "\nUsing HotSpot WiFi credentials\n";
+      ssid     = ssid_alt2;
+      password = password_alt2;
+      if (!waitForConnection()) {
+        Serial.println("\nWiFi connection failed. Restarting...\n");
+        ESP.restart();
+      }
+    }
+  } else {
+    wifiSite = "\nUsing Gilboa Guest WiFi credentials\n";
+    ssid     = ssid_pd;
+    password = password_pd;
+    if (!waitForConnection()) {
+      wifiSite = "Using Gilboa Office WiFi credentials\n";
+      ssid     = ssid_alt1;
+      password = password_alt1;
+      if (!waitForConnection()) {
+        wifiSite = "\nUsing HotSpot WiFi credentials\n";
+        ssid     = ssid_alt2;
+        password = password_alt2;
+        if (!waitForConnection()) {
+          Serial.println("\nWiFi connection failed. Restarting...\n");
+          ESP.restart();
+        }
+      }
     }
   }
 
+  Serial.println(wifiSite); // Print which WiFi credentials were used
 
   Serial.println();
   Serial.print ("SSID: ");
