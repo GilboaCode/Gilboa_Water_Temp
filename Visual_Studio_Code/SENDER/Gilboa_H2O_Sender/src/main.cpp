@@ -1,3 +1,8 @@
+// Sender - v1.4.00
+//  * Changed the sub version number from V1.2.xx to V1.4.xx to indicate a major change in the Sender code.
+//  * Removed Temperature update while in OTA mode.
+//  * Added  sending the "C" packet in order to look for the "V" packet from the Receiver to update the OTA active flag.
+//
 // Sender - v1.2.04
 //  * Fixed the sending of the "D" packet to the Receiver before turning on the aux 3 volts that powers up the 1-wire board. 
 //    There was another power up call before the "D" command was sent in the Setup.
@@ -53,7 +58,7 @@
 // ONLY enter sleep AFTER all readings have been sent
 //
 
-#define sender_version "v1.2.04"
+#define sender_version "v1.4.00"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -111,10 +116,11 @@ WebServer server(80);
 bool oledCurrentlyActive = false;
 
 // <<< Debug Mode - GPIO 2 - high to stay awake >>>
-#define Debug_Mode_PIN 2  // GPIO pin for Debug Mode Deep Sleep interupt
-#define Debug_State_PIN 7 // GPIO pin to indicate Debug State HIGH=Debug Mode
-bool hardwareDebugMode = false; // Variable of the Hardware value
+#define OTA_Mode_PIN 2  // GPIO pin for OTA Mode Deep Sleep interupt
+#define OTA_State_PIN 7 // GPIO pin to indicate OTA State HIGH=OTA Mode
 
+#define variable_update_time_in_OTA 30 // Timeout for OTA variable update in seconds
+int variable_update_counter = variable_update_time_in_OTA; // Counter for OTA variable update timeout
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, 21);
 SX1262 LoRa = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY);
@@ -145,6 +151,7 @@ const int SLEEP_MINUTES = 30; //Default Sleep time between readings
 RTC_DATA_ATTR int     aux_sleep_minutes       = 0;   // default only on first boot
 RTC_DATA_ATTR bool    OLED_flag_from_receiver  = false;
 RTC_DATA_ATTR bool    debug_flag_from_receiver = false;
+RTC_DATA_ATTR int    OTA_flag_from_receiver   = 0;
 
 // Flag to detect first boot after power-on (survives deep sleep too)
 RTC_DATA_ATTR bool    vars_initialized = false;
@@ -162,15 +169,16 @@ String lastRssiStr = "N/A";
 // === NVS: Load/Save Operator Variables ===
 void loadOperatorVars() {
   prefs.begin("operator", true);
-  // Only load from NVS if not first boot after reset
-  if (vars_initialized) {
+  if (!vars_initialized) {
     aux_sleep_minutes       = prefs.getInt("aux_sleep", aux_sleep_minutes);
     OLED_flag_from_receiver  = prefs.getBool("oled_flag", OLED_flag_from_receiver);
     debug_flag_from_receiver = prefs.getBool("debug_flag", debug_flag_from_receiver);
+    OTA_flag_from_receiver   = prefs.getInt("ota_flag", OTA_flag_from_receiver);
+    Serial.printf("Loaded operator vars: aux_sleep=%d, OLED_flag=%d, debug_flag=%d, OTA_flag=%d\n",
+                aux_sleep_minutes, OLED_flag_from_receiver, debug_flag_from_receiver, OTA_flag_from_receiver);
   }
   prefs.end();
-  Serial.printf("Loaded operator vars: aux_sleep=%d, OLED_flag=%d, debug_flag=%d\n",
-                aux_sleep_minutes, OLED_flag_from_receiver, debug_flag_from_receiver);
+
 }
 
 void saveOperatorVars() {
@@ -178,6 +186,7 @@ void saveOperatorVars() {
   prefs.putInt("aux_sleep", aux_sleep_minutes);
   prefs.putBool("oled_flag", OLED_flag_from_receiver);
   prefs.putBool("debug_flag", debug_flag_from_receiver);
+  prefs.putInt("ota_flag", OTA_flag_from_receiver);
   prefs.end();
   Serial.println("Operator variables saved to NVS");
 }
@@ -293,6 +302,18 @@ void sendDataPacket(){
   }
 }
 
+// Send "C" packet so the Receiver can send it's variables
+void sendCpacket() {
+  String sendPacket =  "C"; // Complete packet indicator;
+  int state = LoRa.transmit(sendPacket);
+  if (state == RADIOLIB_ERR_NONE) {
+  Serial.println(sendPacket);
+  } else {
+  Serial.printf("TX failed on C packet (error: %d)\n", state);
+  }
+  delay(delayBetweenPackets); // Short delay between packets
+}
+
 // Read and transmit ALL probes immediately on wake
 void readAndTransmitAllProbes() {
   String sendPacket = "";
@@ -384,21 +405,26 @@ void readAndTransmitAllProbes() {
 
   delay(delayBetweenPackets); // Short delay between packets
 
-  // Send packet to denote all readings sent  
-  sendPacket =  "C"; // Complete packet indicator;
-  int state = LoRa.transmit(sendPacket);
-  if (state == RADIOLIB_ERR_NONE) {
-  Serial.println(sendPacket);
-  } else {
-  Serial.printf("TX failed on C packet (error: %d)\n", state);
+  // Send the Hardware input states
+  sendPacket = "H," + String(digitalRead(OTA_State_PIN)) + "," + String(OTA_flag_from_receiver);
+  sendPacket.toUpperCase();
+  if (LORA_fail_flag == false){
+    int state = LoRa.transmit(sendPacket);
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(sendPacket);
+    } else {
+      Serial.printf("TX failed on Hardware Input packet (error: %d)\n", state);
+    }
   }
-  delay(delayBetweenPackets); // Short delay between packets
+
+  // Send packet to denote all readings sent  
+  sendCpacket(); // Send "C" packet to indicate all readings sent
 
   allReadingsSent = true;
   Serial.println(">>> ALL READINGS SENT - READY FOR SLEEP <<<");
 }
 
-  // Listen and wait a set time for a "V,xx,yy,zz" packet from receiver
+  // Listen and wait a set time for a "V,aux,oled,debug,OTA" packet from receiver
   void receiveVariablesFromReceiver() {
   unsigned long startWait = millis();
   while (millis() - startWait < MAX_WAIT_MS) {
@@ -407,22 +433,27 @@ void readAndTransmitAllProbes() {
     if (rxState == RADIOLIB_ERR_NONE && rxPacket.length() > 0) {
       Serial.print("Received during wait: "); Serial.println(rxPacket);
       if (rxPacket.startsWith("V,")) {
-        // Split: V,aux_sleep,OLED_flag,debug_flag
+        // Split: V,aux_sleep,OLED_flag,debug_flag,OTA_flag
         int c1 = rxPacket.indexOf(',');
         int c2 = rxPacket.indexOf(',', c1 + 1);
         int c3 = rxPacket.indexOf(',', c2 + 1);
+        int c4 = rxPacket.indexOf(',', c3 + 1);
 
-        if (c1 > 0 && c2 > c1 && c3 > c2) {
+        if (c1 > 0 && c2 > c1 && c3 > c2 && c4 > c3) {
           String auxStr   = rxPacket.substring(c1 + 1, c2);
           String oledStr  = rxPacket.substring(c2 + 1, c3);
-          String debugStr = rxPacket.substring(c3 + 1);
+          String debugStr = rxPacket.substring(c3 + 1, c4);
+          String otaStr   = rxPacket.substring(c4 + 1);
 
           int newSleep = auxStr.toInt();
           bool newOled  = (oledStr == "1" || oledStr == "On" || oledStr == "on");
           bool newDebug = (debugStr == "1" || debugStr == "On" || debugStr == "on");
+          int newOTA = otaStr.toInt();
           if ((newSleep == aux_sleep_minutes) &&
               (newOled == OLED_flag_from_receiver) &&
-              (newDebug == debug_flag_from_receiver)) {
+              (newDebug == debug_flag_from_receiver) &&
+              (newOTA == OTA_flag_from_receiver)
+             ) {
             Serial.println("Received variables are the same as current settings. No changes made.");
             return; // No changes needed
           }
@@ -436,16 +467,18 @@ void readAndTransmitAllProbes() {
           debug_flag_from_receiver = newDebug;
           Serial.printf("Updated debug_flag_from_receiver: %d (%s)\n", 
                         debug_flag_from_receiver, debug_flag_from_receiver ? "On" : "Off");
+          OTA_flag_from_receiver = newOTA;
+          Serial.printf("Updated OTA_flag_from_receiver: %d\n", OTA_flag_from_receiver);
           saveOperatorVars();
           return;  // Success - stop waiting
         }
-      }
+      } 
     }
 
     delay(10);  // small yield
   }
 
-  Serial.println("No valid V,xx,yy,zz packet received within 2000 ms");
+  Serial.println("No valid V,aux,oled,debug,OTA packet received within 2000 ms");
 }
 
 // Enter sleep mode for a specified number of minutes, or 1 minute if debug mode is active
@@ -620,8 +653,10 @@ void lora_setup() {
   }
 }
 
-
+// ****************************************
 // ************ Setup and Loop ************
+// ****************************************
+
 // Setup the 1-wire power up in the 1st pass of the loop after "D" command has been sent.
 void setup() {
   esp_log_level_set("Preferences", ESP_LOG_NONE); 
@@ -635,7 +670,7 @@ void setup() {
   digitalWrite(ADC_CTRL_PIN, HIGH);
 
   pinMode(OLED_ACTIVE_PIN, INPUT_PULLDOWN); // Set OLED Active pin as input with pull-down
-  pinMode (Debug_State_PIN,INPUT_PULLDOWN); // Set Debug State pin as input with pull-down
+  pinMode (OTA_State_PIN,INPUT_PULLDOWN); // Set OTA State pin as input with pull-down
 
   loadOperatorVars(); // Load operator variables from NVS
   u8g2.begin(); // Initialize the OLED display
@@ -644,7 +679,7 @@ void setup() {
   lora_setup();
 
   // Handle the WiFi access point for OTA updates
-  if (digitalRead(Debug_State_PIN) == HIGH ) {
+  if (digitalRead(OTA_State_PIN) == HIGH ) {
     OTA_debug_mode();
   }
 
@@ -654,7 +689,10 @@ void setup() {
   vars_initialized = true;
 }
 
-// ********************** LOOP
+// ****************************************
+// ********************** LOOP ************
+// ****************************************
+
 void loop() {
   if (justWokeUp) {
     if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
@@ -670,46 +708,48 @@ void loop() {
   unsigned long now = millis();
 
   // Handle the WiFi access point for OTA updates
-  if (digitalRead(Debug_State_PIN) == HIGH ) {
-    hardwareDebugMode = true;
+  Serial.printf("OTA_State_PIN: %d, OTA_flag_from_receiver: %d\n", digitalRead(OTA_State_PIN), OTA_flag_from_receiver);
+  if (digitalRead(OTA_State_PIN) == HIGH && OTA_flag_from_receiver == 1) {
   /* HANDLE UPDATE REQUESTS */
     server.handleClient();  
     Serial.println("Debug mode active - WiFi access point for OTA updates running");
+    delay (1000);  // Stay awake for OTA updates  
+    variable_update_counter -= 1; // Decrement the counter for OTA variable update timeout
+    if (variable_update_counter <= 0) {
+      variable_update_counter = variable_update_time_in_OTA; // Reset the counter if not in OTA mode
+      Serial.println("OTA variable update timeout reached. Exiting OTA mode.");
+      sendCpacket(); // Send "C" packet to indicate all readings sent
+      receiveVariablesFromReceiver(); // Receive variables from receiver
+    }
   }else {
-    hardwareDebugMode = false;
-  }
+    variable_update_counter = variable_update_time_in_OTA; // Reset the counter if not in OTA mode
+    updateOledActiveState(); // Handle the OLDE Active Switch
 
-  updateOledActiveState(); // Handle the OLDE Active Switch
-
-  if (inSleepMode) { delay(100); return; }
+    if (inSleepMode) { delay(100); return; }
 
 
-  if (LORA_fail_flag == false){
-    Serial.print ("Sending Data Packet to Receiver... \n");
-    sendDataPacket(); // Send Data Packet to Receiver
-  }
-  delay (2000);  // Wait 2 seconds before turning on power to the 1-wire board
-  Serial.println ("Turning on power to 1-wire board...\n");
+    if (LORA_fail_flag == false){
+      Serial.print ("Sending Data Packet to Receiver... \n");
+      sendDataPacket(); // Send Data Packet to Receiver
+    }
+    delay (2000);  // Wait 2 seconds before turning on power to the 1-wire board
+    Serial.println ("Turning on power to 1-wire board...\n");
 
-  if (one_wire_setup_complete == false) { 
-    one_wire_setup(); // Initialize the 1-wire board and check for connected devices
-    one_wire_setup_complete = true;
-  }
-  delay(10);
+    if (one_wire_setup_complete == false) { 
+      one_wire_setup(); // Initialize the 1-wire board and check for connected devices
+      one_wire_setup_complete = true;
+    }
+    delay(10);
 
-  Serial.printf("LORA_fail_flag: %d, one_wire_fail_flag: %d\n", LORA_fail_flag,one_wire_fail_flag);
-  // Read and transmit all probes
-  if (LORA_fail_flag == false  && one_wire_fail_flag == false){
-    readAndTransmitAllProbes();
-    receiveVariablesFromReceiver();
-  }else{
-    allReadingsSent= true; // Fake out the allReadingSent to start the sleep cycle
-  }
-  
- 
-  // If hardware debug switch is made then skip sleep and stay awake for OTA updates
-  // OK to sleep?
-  if (hardwareDebugMode == false){
+    Serial.printf("LORA_fail_flag: %d, one_wire_fail_flag: %d\n", LORA_fail_flag,one_wire_fail_flag);
+    // Read and transmit all probes
+    if (LORA_fail_flag == false  && one_wire_fail_flag == false){
+      readAndTransmitAllProbes();
+      receiveVariablesFromReceiver();
+    }else{
+      allReadingsSent= true; // Fake out the allReadingSent to start the sleep cycle
+    }
+
     if (allReadingsSent) {
       if(oledCurrentlyActive == true) {
         delay(5000);  // Wait 5 seconds before sleeping if OLED is ON
@@ -717,9 +757,6 @@ void loop() {
       enterSleep();
       return;
     }
-  } else {
-    delay (1000);  // Stay awake for OTA updates  
+    delay(500);
   }
-
-  delay(500);
 }

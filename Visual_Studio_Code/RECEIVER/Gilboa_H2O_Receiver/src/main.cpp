@@ -1,3 +1,12 @@
+// Receiver -- v1.4.00
+//  * Fixed Receiver Temperature reading to be every 10 minutes instead of tieing it to the Sender data packet. This is to prevent 
+//    the Receiver from not reading its own temperature if the Sender is not sending data packets.
+//  * Added display of Sender OTA mode to the Status command.
+//  * Added Telegram commands /_OTA_ON and /_OTA_OFF to enable or disable the OTA mode on the Sender. This is to allow the operator 
+//    to enable or disable the OTA mode on the Sender remotely. Even if enabled by the command, the Sender will still only enter OTA mode 
+//    if the OTA_State_PIN is HIGH. This is to prevent the Sender from entering OTA mode if the operator does not want it to.
+//  * Updated the BACKUP and RESTORE to include the new OTA flag.
+//
 // Receiver -- v1.3.09
 //  * Added a new command (/_HISTORY) to the Telegram bot to display the history of the Receiver. 
 //    The times of the last received packets were received from the Sender, and when the receiver was reset.
@@ -141,7 +150,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.3.09"
+#define receiver_version "v1.4.00"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -168,6 +177,7 @@
 // ---------------------------------------
 // ---------- IP configurations ----------
 // ---------------------------------------
+String wifiSite = "";
 
 // ---------- WiFi credentials Gilboa Guest ----------
 String ssid_pd     = "Gilboa Guest";
@@ -175,7 +185,7 @@ String password_pd = "DiveGilboa";
 
 // ---------- Alternate 1 WiFi credentials Gilboa Office ----------
 //String ssid_alt1     =  "Office";
-String ssid_alt1     =  "OOffice";
+String ssid_alt1     =  "Office";
 String password_alt1 = "FullTank#0412";
 
 // ---------- Alternate 2 WiFi credentials Jeff's Android Hotspot ----------
@@ -269,7 +279,9 @@ String ReceiverVersion = receiver_version;
 
 String lastSenderBatt = "N/A";
 String lastRssiStr = "N/A";
+int SenderOTAEnableFlag = 0; // 0 = Disabled, 1 = Enabled. 
 unsigned long lastPacketTime = 0;
+unsigned long lastTempReadTime = 0; // Last time the Receiver temperature was read, in milliseconds
 #define SLEEP_TIMEOUT_MS 20000
 int sleep_time_for_sender ;
 
@@ -326,6 +338,7 @@ static boolean debug_flag_from_receiver = false;
 int old_aux_sleep_minutes=0;
 boolean old_OLED_flag_from_receiver = false;
 boolean old_debug_flag_from_receiver = false;
+int old_SenderOTAEnableFlag = 0; // Old value of SenderOTAEnableFlag to detect changes and send to Sender
 
 String uniqueRoms[14];
 int uniqueRomCount = 0;
@@ -428,8 +441,8 @@ void loadLast30PacketTimes(){
   Serial.println("Loaded last " + String(packetTimeBufferSize) + " packet times from NVS");
 }
 
-void saveLast30PacketTimes() {
-  // Save the last 30 packet times and the current index to NVS 
+void saveLastPacketTimes() {
+  // Save the last packet times and the current index to NVS 
   prefs.begin("last30", false);
   for (int i = 0; i < packetTimeBufferSize; i++) {
     String key = "time";
@@ -486,6 +499,7 @@ void loadOperatorVars() {
   OLED_flag_from_receiver = prefs.getBool("oled_flag", false);
   debug_flag_from_receiver = prefs.getBool("debug_flag", false);
   watchdogEnableFlag = prefs.getBool("watchdog_en", true);
+  SenderOTAEnableFlag = prefs.getBool("sender_ota_en", false);
   prefs.end();
 
   // Clamp aux_sleep_minutes
@@ -506,6 +520,7 @@ void saveOperatorVars() {
   prefs.putBool("oled_flag", OLED_flag_from_receiver);
   prefs.putBool("debug_flag", debug_flag_from_receiver);
   prefs.putBool("watchdog_en", watchdogEnableFlag);
+  prefs.putBool("sender_ota_en", SenderOTAEnableFlag);
   prefs.end();
   Serial.println("Operator variables saved to NVS");
 }
@@ -1632,6 +1647,10 @@ void command_superhelp (String chat_id, String text){
   runningText += " /debug_on  - Sender Debug mode on";
   runningText += "\n";
   runningText += " /debug_off - Sender Debug mode off";
+  runningText += "\n";  
+  runningText += " /Sender_OTA_On  - Sender OTA mode on";
+  runningText += "\n";
+  runningText += " /Sender_OTA_Off - Sender OTA mode off";
   runningText += "\n";
   runningText += " /WDT_on    - Watchdog mode on";
   runningText += "\n";
@@ -1642,7 +1661,7 @@ void command_superhelp (String chat_id, String text){
   runningText += " /_UPDATE   - Update Receiver firmware";
   runningText += "\n";
   runningText += " /_RESET    - Receiver Reset";
-  runningText += "\n";
+  runningText += "\n";  
   runningText += " /_NETWORK  - Receiver Network Information";
   runningText += "\n";
   runningText += " /_HISTORY  - Receiver History Information";
@@ -1738,7 +1757,7 @@ snprintf(buildBuffer, sizeof(buildBuffer),
   last30PacketTimesIndex = (last30PacketTimesIndex + 1) % packetTimeBufferSize; // wrap around
   Serial.printf("Date: %04d-%02d-%02d Time: %02d:%02d:%02d\n",
                 year, month, day, hour, minute, second);
-  saveLast30PacketTimes(); // Save the updated packet times to NVS
+  saveLastPacketTimes(); // Save the updated packet times to NVS
 }
 
 
@@ -1770,6 +1789,8 @@ void command_status (String chat_id,String text) {
   runningText += "\nSender Batt: " ;
   runningText += lastSenderBatt ;
   runningText += " v";
+  runningText += "\nSender OTA Enabled: " ;
+  runningText += (SenderOTAEnableFlag ? "Yes" : "No");
   runningText += "\nSender WDT: ";
   runningText += String(runningDataPacketTimer);
   runningText += " / ";
@@ -1858,8 +1879,21 @@ void command_debug_off (String chat_id, String text) {
   debug_flag_from_receiver = false;
   bot.sendMessage(chat_id, "Debug mode turned OFF", "");
 }
+// Command Sender_OTA_On, Turn on the OTA mode of the Sender
+void command_Sender_OTA_On (String chat_id, String text) {
+  SenderOTAEnableFlag = 1;
+  bot.sendMessage(chat_id, "Sender OTA mode turned ON", "");
+  saveOperatorVars (); // Save the updated SenderOTAEnableFlag to EEPROM
+}
 
-// Command *RESET* ,Reset the Receiver 
+// Command Sender_OTA_Off, Turn off the OTA mode of the Sender
+void command_Sender_OTA_Off (String chat_id, String text) {
+  SenderOTAEnableFlag = 0;
+  bot.sendMessage(chat_id, "Sender OTA mode turned OFF", "");
+  saveOperatorVars (); // Save the updated SenderOTAEnableFlag to EEPROM
+}
+
+// Command _RESET ,Reset the Receiver 
 void command_reset (String chat_id, String text) {
   telegramResetFlag = true;
   bot.sendMessage(chat_id, "Receiver is resetting...", "");
@@ -2041,7 +2075,7 @@ void handleNewMessages(int numNewMessages)
 
     // Diag print
     String runningText = text;
-    runningText +=  "Received message: ";
+    runningText +=  " Received message: ";
     runningText += text;
     runningText += " from chat ID: ";
     runningText += chat_id;
@@ -2053,7 +2087,9 @@ void handleNewMessages(int numNewMessages)
     if (text == "/ota") command_ota(chat_id,text);
     if (text == "/disp_on") command_display_on (chat_id,text);
     if (text == "/debug_on") command_debug_on (chat_id,text);
-    if (text == "/debug_off") command_debug_off (chat_id,text);
+    if (text == "/debug_off") command_debug_off (chat_id,text);    
+    if (text == "/Sender_OTA_On") command_Sender_OTA_On (chat_id,text);
+    if (text == "/Sender_OTA_Off") command_Sender_OTA_Off (chat_id,text);
     if (text == "/WDT_on") command_WDT_on (chat_id,text);
     if (text == "/WDT_off") command_WDT_off (chat_id,text);
     if (text == "/_UPDATE") command_update(chat_id,text);
@@ -2207,17 +2243,16 @@ void LoRaTask(void *pvParameters)
           temperatureDetectedHistory[i] = temperatureDetected[i];
           temperatureDetected[i] = false; // Reset for next packet
         }
-        // Read Receiver CPU temperature
-        float temp_celsius = temperatureRead();
-        Receiver_temp_farenheit = (temp_celsius * 9.0/5.0) + 32.0;
-        //Serial.printf("Receiver CPU Temp: %.1f °F\n", Receiver_temp_farenheit);
+
 
         sendPacket = "V," ;
         sendPacket +=  String(aux_sleep_minutes) ;
         sendPacket +=  "," ;
         sendPacket +=  String(OLED_flag_from_receiver ? 1 : 0) ;
         sendPacket += "," ;
-        sendPacket +=  String(debug_flag_from_receiver ? 1 : 0);
+        sendPacket +=  String(debug_flag_from_receiver ? 1 : 0);        
+        sendPacket += "," ;
+        sendPacket +=  String(SenderOTAEnableFlag ? 1 : 0);
         sendPacket.toUpperCase();
 
         delay(delayTimeBeforeVPacket); // Small delay before sending to avoid collision
@@ -2231,6 +2266,7 @@ void LoRaTask(void *pvParameters)
         old_aux_sleep_minutes = aux_sleep_minutes;
         old_OLED_flag_from_receiver = OLED_flag_from_receiver;
         old_debug_flag_from_receiver = debug_flag_from_receiver;
+        old_SenderOTAEnableFlag = SenderOTAEnableFlag;
         resetVariablesFlag = false;  
         
         runningTimer = 0; // Reset running timer on new packet
@@ -2338,7 +2374,7 @@ void ProcessTask(void *pvParameters){
           clearSenderFaultFlag();
         } 
         if (cm == 'W') {
-          // Water Detector PAcket
+          // Water Detector Packet
           water_bottom_detected = newPacket.substring(c1 + 1,c2);
           water_top_detected = newPacket.substring(c2 + 1,c3);
           clearTCFaultFlag () ; // Clear the TC fault flag
@@ -2446,6 +2482,9 @@ void exportNVSBackup() {
 
   Serial.print("operator.debug_flag=");
   Serial.println(debug_flag_from_receiver ? 1 : 0);
+
+  Serial.print("operator.ota_flag=");
+  Serial.println(SenderOTAEnableFlag ? 1 : 0);
 
   Serial.print("operator.watchdog_en=");
   Serial.println(watchdogEnableFlag ? 1 : 0);
@@ -2597,6 +2636,15 @@ bool restoreNVSLine(String line) {
     prefs.end();
     debug_flag_from_receiver = val;
     old_debug_flag_from_receiver = val;
+    return true;
+  }  
+  if (variable == "operator.ota_flag") {
+    bool val = (value.toInt() != 0);
+    prefs.begin("operator", false);
+    prefs.putBool("ota_flag", val);
+    prefs.end();
+    SenderOTAEnableFlag = val;
+    old_SenderOTAEnableFlag = val;
     return true;
   }
   if (variable == "operator.watchdog_en") {
@@ -2767,7 +2815,60 @@ int wifi_attempts = 0;
   return (true); // Return true if connected
 }
 
+void updateReceiverTemperature(){
+// Read Receiver CPU temperature
+float temp_celsius = temperatureRead();
+Receiver_temp_farenheit = (temp_celsius * 9.0/5.0) + 32.0;
+//Serial.printf("Receiver CPU Temp: %.1f °F\n", Receiver_temp_farenheit);
+}
 
+// Is the WiFi connection good? Returns true if connected, false otherwise
+bool testWiFiConnection() {
+  if (!waitForConnection()) { 
+    Serial.printf("\nNo WiFi connection at: %s\n", wifiSite.c_str()); 
+    return false;
+  }
+  for (int i = 0; i < 3; i++) {
+    IPAddress resolvedIP;
+    if (WiFi.hostByName("www.google.com", resolvedIP) == 1) {
+      Serial.printf("\nWiFi connection established at: %s\n", wifiSite.c_str()); 
+      return true; // DNS resolution successful
+    }
+  }
+  Serial.printf("\nNo DNS connection at: %s\n", wifiSite.c_str()); 
+  return false; // DNS resolution failed
+}
+
+void Connect_to_wifi(){
+  // Selecting either Gilboa or Debug credentials
+  if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
+    wifiSite = "Debug WiFi credentials";
+    ssid     = ssid_db;
+    password = password_db;
+    if (testWiFiConnection()){return;} 
+    wifiSite = "HotSpot WiFi credentials";
+    ssid     = ssid_alt2;
+    password = password_alt2;
+    if (testWiFiConnection()){return;} 
+    Serial.println("\nWiFi connection failed. Restarting...\n");
+    ESP.restart();
+  } else {
+    wifiSite = "Gilboa Guest WiFi credentials";
+    ssid     = ssid_pd;
+    password = password_pd;
+    if (testWiFiConnection()){return;} 
+    wifiSite = "Gilboa Office WiFi credentials";
+    ssid     = ssid_alt1;
+    password = password_alt1;
+    if (testWiFiConnection()){return;} 
+    wifiSite = "Usng HotSpot WiFi credentials";
+    ssid     = ssid_alt2;
+    password = password_alt2;
+    if (testWiFiConnection()){return;} 
+    Serial.println("\nWiFi connection failed. Restarting...\n");
+    ESP.restart();
+  }
+}
 
 // =====================================================================
 // === SETUP ===========================================================
@@ -2823,41 +2924,7 @@ xTaskCreatePinnedToCore(
   Wire.begin(17, 18); Wire.setClock(100000);
   u8g2.begin();
 
-  String wifiSite = "";
-  // Selecting either Gilboa or Debug credentials
-  if (digitalRead(Telegram_Debug_Mode_Pin) == LOW) {
-  //  Serial.println("Using Debug WiFi credentials");
-    wifiSite = "\nUsing Debug WiFi credentials\n";
-    ssid     = ssid_db;
-    password = password_db;
-    if (!waitForConnection()) {
-      wifiSite = "\nUsing HotSpot WiFi credentials\n";
-      ssid     = ssid_alt2;
-      password = password_alt2;
-      if (!waitForConnection()) {
-        Serial.println("\nWiFi connection failed. Restarting...\n");
-        ESP.restart();
-      }
-    }
-  } else {
-    wifiSite = "\nUsing Gilboa Guest WiFi credentials\n";
-    ssid     = ssid_pd;
-    password = password_pd;
-    if (!waitForConnection()) {
-      wifiSite = "Using Gilboa Office WiFi credentials\n";
-      ssid     = ssid_alt1;
-      password = password_alt1;
-      if (!waitForConnection()) {
-        wifiSite = "\nUsing HotSpot WiFi credentials\n";
-        ssid     = ssid_alt2;
-        password = password_alt2;
-        if (!waitForConnection()) {
-          Serial.println("\nWiFi connection failed. Restarting...\n");
-          ESP.restart();
-        }
-      }
-    }
-  }
+  Connect_to_wifi(); // Connect to a WiFi
 
   Serial.println(wifiSite); // Print which WiFi credentials were used
 
@@ -2912,12 +2979,15 @@ xTaskCreatePinnedToCore(
   } else {
       Serial.println("Telegram getMe(): FAILED");
   }
+  updateReceiverTemperature(); // Read the ESP32 CPU temperature
   checkTelegramWebhook();
   updateTime("Boot");
 }
 
-
+// =====================================================================
 // === LOOP ===
+// =====================================================================
+
 void loop() {
   checkHardResetPin(); // Check reset pin for resetting the wifi address
   server.handleClient(); 
@@ -2972,6 +3042,12 @@ void loop() {
     minCounter = millis() ;
     runningTimer = (millis() - lastPacketTime)/60000;
     runningDataPacketTimer = (millis() - lastDataPacketTime)/60000;
+  }
+
+  // Read Receiver Temperature every 10 minutes
+  if (millis() - lastTempReadTime > 600000) {
+    lastTempReadTime = millis();
+    updateReceiverTemperature();
   }
 
   // Test if Sender has failed to send data for more than 60 minutes

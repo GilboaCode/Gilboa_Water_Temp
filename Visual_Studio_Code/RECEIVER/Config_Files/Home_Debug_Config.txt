@@ -14,6 +14,7 @@ post.url=http://jsonplaceholder.typicode.com/test
 operator.aux_sleep=0
 operator.oled_flag=0
 operator.debug_flag=0
+operator.ota_flag=0
 operator.watchdog_en=1
 rom_table.0=28 6E C0 B2 00 00 00 7A
 rom_table.1=28 BE 6D B2 00 00 00 61

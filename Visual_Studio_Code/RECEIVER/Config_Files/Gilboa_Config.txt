@@ -14,6 +14,7 @@ post.url=https://gilboaquarry.com/temp_api.php?key=gilboa_temp_9f3kL2x8Qp7Zr4T
 operator.aux_sleep=0
 operator.oled_flag=0
 operator.debug_flag=0
+operator.ota_flag=0
 operator.watchdog_en=1
 rom_table.0=28 DB A7 B1 00 00 00 5E
 rom_table.1=28 12 C7 B4 00 00 00 C7
