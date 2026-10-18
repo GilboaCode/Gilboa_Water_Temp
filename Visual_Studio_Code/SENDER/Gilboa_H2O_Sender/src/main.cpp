@@ -708,11 +708,11 @@ void loop() {
   unsigned long now = millis();
 
   // Handle the WiFi access point for OTA updates
-  Serial.printf("OTA_State_PIN: %d, OTA_flag_from_receiver: %d\n", digitalRead(OTA_State_PIN), OTA_flag_from_receiver);
+  //Serial.printf("OTA_State_PIN: %d, OTA_flag_from_receiver: %d\n", digitalRead(OTA_State_PIN), OTA_flag_from_receiver);
   if (digitalRead(OTA_State_PIN) == HIGH && OTA_flag_from_receiver == 1) {
   /* HANDLE UPDATE REQUESTS */
     server.handleClient();  
-    Serial.println("Debug mode active - WiFi access point for OTA updates running");
+    //Serial.println("Debug mode active - WiFi access point for OTA updates running");
     delay (1000);  // Stay awake for OTA updates  
     variable_update_counter -= 1; // Decrement the counter for OTA variable update timeout
     if (variable_update_counter <= 0) {

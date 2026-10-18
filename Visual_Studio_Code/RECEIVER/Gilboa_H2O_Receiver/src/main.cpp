@@ -6,6 +6,7 @@
 //    to enable or disable the OTA mode on the Sender remotely. Even if enabled by the command, the Sender will still only enter OTA mode 
 //    if the OTA_State_PIN is HIGH. This is to prevent the Sender from entering OTA mode if the operator does not want it to.
 //  * Updated the BACKUP and RESTORE to include the new OTA flag.
+//  * Added the /trace function, with the /_trace_on, /_trace_off commands in Telegram.
 //
 // Receiver -- v1.3.09
 //  * Added a new command (/_HISTORY) to the Telegram bot to display the history of the Receiver. 
@@ -302,9 +303,15 @@ int day ;
 int UTCoffset;
 bool daylight_saving_time_flag ; // True- Enabled, False - Disabled. This is to allow the operator to turn off DST detection if the operator does not want to use this feature. The default is DST detection on. This variable is stored in NVS and is loaded on startup.
 int DayLightSavingTimeMode = 0; // 0 = No DST , 1 = DST Auto, 2 = DST all year
+
 #define packetTimeBufferSize 45
 String last30PacketTimes[packetTimeBufferSize]; // Buffer of the last packet times received from the Sender
 int last30PacketTimesIndex = 0; // pointer to the next index in the last30PacketTimes array to store the next packet time
+
+#define traceBufferLineCount 45 // Size of the trace buffer entries
+String traceBuffer[traceBufferLineCount] ; // trace buffer
+bool trace_enable_flag = false; // Trace enable flag
+int traceBufferIndex = 0; // pointer to next index in buffer
 
 
 // Sender Water Detector 
@@ -369,6 +376,72 @@ bool telegramUpdateFlag = false; // Flag to indicate if the /update command was 
 bool telegramUpdateFailedFlag = false; // Flag to indicate if the /update command failed
 const char* firmwareURL ="https://github.com/GilboaCode/Gilboa_Water_Temp/releases/latest/download/Receiver_firmware.bin";
 bool updateStarted = false;
+
+
+// ======================================
+// Calendar and Time Functions
+// ======================================
+
+// Returns 0 (Sunday) through 6 (Saturday)
+int dayOfWeek(int year, int month, int day) {
+    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    if (month < 3) year--;
+    return (year + year / 4 - year / 100 + year / 400 + t[month - 1] + day) % 7;
+}
+
+// Returns the day-of-month for the nth Sunday (1-indexed) of a given month
+int nthSunday(int year, int month, int n) {
+    int firstDow = dayOfWeek(year, month, 1);
+    int firstSunday = (7 - firstDow) % 7 + 1;
+    return firstSunday + (n - 1) * 7;
+}
+
+// Set the DST flag if in the correct range for the year, month and day.
+void getDSTOffset(int year, int month, int day) {
+    int dstStart = 3 * 100 + nthSunday(year, 3, 2);  // 2nd Sunday in March
+    int dstEnd   = 11 * 100 + nthSunday(year, 11, 1); // 1st Sunday in November
+    int today    = month * 100 + day;
+    daylight_saving_time_flag = (today >= dstStart && today < dstEnd) ? true : false;
+    return ;
+}
+
+void trace(String (info_String)){
+  if (trace_enable_flag == true){
+    timeClient.update();
+      // Get Date
+    time_t epoch = timeClient.getEpochTime();
+  // Get adjusted date/time
+    struct tm *ptm = localtime(&epoch);  
+    // Note: tm_year is years since 1900, tm_mon is 0-11
+    year  = ptm->tm_year + 1900;
+    month = ptm->tm_mon + 1;
+    day   = ptm->tm_mday;
+    // Adjust for EST
+    epoch -= 5 * 3600; // Subtract 5 hours for EST
+    getDSTOffset(year, month, day); //determine if DST is in effect and set daylight_saving_time_flag accordingly
+        // Adjust for daylight saving time
+    if (DayLightSavingTimeMode == 1 && daylight_saving_time_flag || DayLightSavingTimeMode == 2) {
+      //Serial.println("DST is in effect, adjusting time by +1 hour");
+      epoch += 3600;  // Add 1 hour
+    }else {
+      //Serial.println("DST is not in effect, no adjustment needed");
+    }
+    //  Recalculate tm after changing epoch
+    ptm = localtime(&epoch);
+    hour   = ptm->tm_hour;
+    minute = ptm->tm_min;
+    second = ptm->tm_sec;
+    // Save the time string in the last30PacketTimes
+    char buildBuffer[80];
+    snprintf(buildBuffer, sizeof(buildBuffer), 
+          "%02d:%02d:%02d", 
+          hour, minute, second);
+    traceBuffer[traceBufferIndex] = String(buildBuffer) + " - " + info_String; 
+    traceBufferIndex = (traceBufferIndex + 1) % traceBufferLineCount; // wrap around
+    //Serial.printf("Date: %04d-%02d-%02d Time: %02d:%02d:%02d\n",
+    //              year, month, day, hour, minute, second);
+  }
+}
 
 
 // === NVS ===
@@ -616,35 +689,6 @@ void addUniqueRom(String rom) {
   rom.toUpperCase(); rom.trim();
   if (uniqueRomCount < 14 && isRomUnique(rom)) uniqueRoms[uniqueRomCount++] = rom;
 }
-
-
-// ======================================
-// Calendar and Time Functions
-// ======================================
-
-// Returns 0 (Sunday) through 6 (Saturday)
-int dayOfWeek(int year, int month, int day) {
-    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-    if (month < 3) year--;
-    return (year + year / 4 - year / 100 + year / 400 + t[month - 1] + day) % 7;
-}
-
-// Returns the day-of-month for the nth Sunday (1-indexed) of a given month
-int nthSunday(int year, int month, int n) {
-    int firstDow = dayOfWeek(year, month, 1);
-    int firstSunday = (7 - firstDow) % 7 + 1;
-    return firstSunday + (n - 1) * 7;
-}
-
-// Set the DST flag if in the correct range for the year, month and day.
-void getDSTOffset(int year, int month, int day) {
-    int dstStart = 3 * 100 + nthSunday(year, 3, 2);  // 2nd Sunday in March
-    int dstEnd   = 11 * 100 + nthSunday(year, 11, 1); // 1st Sunday in November
-    int today    = month * 100 + day;
-    daylight_saving_time_flag = (today >= dstStart && today < dstEnd) ? true : false;
-    return ;
-}
-
 
 
 // === MAIN PAGE  ===
@@ -1441,14 +1485,17 @@ void updateOLED() {
       } 
     }
     String tempS = "";
+    String tempstr = "";
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_ncenB08_tr);
-    tempS = "Water L: " ;
-    String tempstr = String(water_bottom_detected) ;
+    tempS = "Water Detect L: " ;
+    tempstr = String(water_bottom_detected) ;
+    //tempstr = ( water_bottom_detected == "n" ? "Dry" : "Wet");
     tempstr.toLowerCase();
     tempS += tempstr ;
     tempS += " U: " ;
     tempstr =String(water_top_detected);
+    //tempstr = ( water_top_detected == "n" ? "Dry" : "Wet");
     tempstr.toLowerCase();
     tempS += tempstr ;
     u8g2.drawStr(0, 10, (tempS).c_str());
@@ -1647,6 +1694,12 @@ void command_superhelp (String chat_id, String text){
   runningText += " /debug_on  - Sender Debug mode on";
   runningText += "\n";
   runningText += " /debug_off - Sender Debug mode off";
+  runningText += "\n";    
+  runningText += " /_trace     - Receiver trace report";
+  runningText += "\n";
+  runningText += " /_trace_on  - Receiver trace mode on";
+  runningText += "\n";    
+  runningText += " /_trace_off - Receiver trace mode off";
   runningText += "\n";  
   runningText += " /Sender_OTA_On  - Sender OTA mode on";
   runningText += "\n";
@@ -1692,7 +1745,7 @@ void command_receiveHistory(String chat_id,String text){
   String runningText = "Packet Update and Boot History \n";
   // Print the last  packet times in reverse order (most recent first)
   for (int i = 0; i < packetTimeBufferSize; i++) {
-    int index = (last30PacketTimesIndex - 1 - i + packetTimeBufferSize) % packetTimeBufferSize; // wrap around
+    int index = (last30PacketTimesIndex + i + packetTimeBufferSize) % packetTimeBufferSize; // wrap around
     if (last30PacketTimes[index] != "") {
       runningText += last30PacketTimes[index];
       runningText += "\n";
@@ -1806,17 +1859,25 @@ void command_status (String chat_id,String text) {
   runningText += "\nReceiver CPU Temp: " ;
   runningText += String(Receiver_temp_farenheit, 1) ;
   runningText += " °F" ;
-  runningText += "\n\nWater L: " ;
-  String tempstr = String(water_bottom_detected) ;
-  tempstr.toLowerCase();
-  runningText += tempstr ;
+  runningText += "\n\nWater Sensor L: " ;
+  //String tempstr = String(water_bottom_detected) ;
+  //tempstr.toLowerCase();
+  //runningText += tempstr ;
+  runningText += (water_bottom_detected == "N" ? "Dry" :
+                water_bottom_detected == "Y" ? "Wet" :
+                water_bottom_detected == "N/A" ? "n/a" : "Unknown");
   runningText += " U: " ;          
-  tempstr =String(water_top_detected);
-  tempstr.toLowerCase();
-  runningText += tempstr ;
+  //tempstr =String(water_top_detected);
+  //tempstr.toLowerCase();
+  //runningText += tempstr ;
+  runningText += (water_top_detected == "N" ? "Dry" :
+                water_top_detected == "Y" ? "Wet" :
+                water_top_detected == "N/A" ? "n/a" : "Unknown");
   runningText += "\n\nHTTP POST: " ;
   runningText += String(httpCode);
-  runningText += "\n\nOLED Active: " ;
+  runningText += "\n\nReceiver Trace Mode: " ;
+  runningText += (trace_enable_flag ? "On" : "Off");  
+  runningText += "\nOLED Active: " ;
   runningText += (OLED_flag_from_receiver ? "On" : "Off");
   runningText += "\nDebug Mode: " ;
   runningText += (debug_flag_from_receiver ? "On" : "Off");
@@ -1879,6 +1940,37 @@ void command_debug_off (String chat_id, String text) {
   debug_flag_from_receiver = false;
   bot.sendMessage(chat_id, "Debug mode turned OFF", "");
 }
+
+// Command trace, display output of the trace buffer
+void command_trace (String chat_id, String text) {
+  Serial.println("Trace started");
+  String runningText = "Trace History \n";
+  // Print the trace in  order (most recent last)
+  for (int i = 0; i < traceBufferLineCount; i++) {
+    int index = (traceBufferIndex + i + traceBufferLineCount) % traceBufferLineCount; // wrap around
+    if (traceBuffer[index] != "") {
+      runningText += traceBuffer[index];
+      runningText += "\n";
+      if (runningText.length() > 4096) { // Telegram message limit
+        Serial.println("Telegram message truncated");
+      }
+    }
+  }
+  bot.sendMessage(chat_id, runningText, "");
+}
+
+// Command trace_on, Turn on the trace mode
+void command_trace_on (String chat_id, String text) {
+  trace_enable_flag = true;
+  bot.sendMessage(chat_id, "Trace mode turned ON", "");
+}
+
+// Command trace_off, Turn off the debug mode
+void command_trace_off (String chat_id, String text) {
+  trace_enable_flag = true;
+  bot.sendMessage(chat_id, "Trace mode turned OFF", "");
+}
+
 // Command Sender_OTA_On, Turn on the OTA mode of the Sender
 void command_Sender_OTA_On (String chat_id, String text) {
   SenderOTAEnableFlag = 1;
@@ -2087,7 +2179,10 @@ void handleNewMessages(int numNewMessages)
     if (text == "/ota") command_ota(chat_id,text);
     if (text == "/disp_on") command_display_on (chat_id,text);
     if (text == "/debug_on") command_debug_on (chat_id,text);
-    if (text == "/debug_off") command_debug_off (chat_id,text);    
+    if (text == "/debug_off") command_debug_off (chat_id,text);        
+    if (text == "/_trace") command_trace (chat_id,text);
+    if (text == "/_trace_on") command_trace_on (chat_id,text);
+    if (text == "/_trace_off") command_trace_off (chat_id,text);    
     if (text == "/Sender_OTA_On") command_Sender_OTA_On (chat_id,text);
     if (text == "/Sender_OTA_Off") command_Sender_OTA_Off (chat_id,text);
     if (text == "/WDT_on") command_WDT_on (chat_id,text);
@@ -2238,7 +2333,8 @@ void LoRaTask(void *pvParameters)
 
 
       if (strcmp(packet.text, "C") == 0){
-        Serial.println("Complete Packet");
+        trace("Read: C"); // record trace event
+        Serial.println("Sender Packets Complete");
         for (int i = 0; i < 14; i++) {
           temperatureDetectedHistory[i] = temperatureDetected[i];
           temperatureDetected[i] = false; // Reset for next packet
@@ -2255,6 +2351,7 @@ void LoRaTask(void *pvParameters)
         sendPacket +=  String(SenderOTAEnableFlag ? 1 : 0);
         sendPacket.toUpperCase();
 
+        trace("Send: " + sendPacket); // record trace event
         delay(delayTimeBeforeVPacket); // Small delay before sending to avoid collision
 
         int state = LoRa.transmit(sendPacket);
@@ -2283,7 +2380,7 @@ void ProcessTask(void *pvParameters){
 
   while (true){
     if (xQueueReceive(loraQueue, &packet, portMAX_DELAY) == pdTRUE){
-      //Serial.print("Received: ");
+      Serial.print("Received: ");
       Serial.println(packet.text);
 
       // Process the packet here...
@@ -2294,7 +2391,7 @@ void ProcessTask(void *pvParameters){
       // T = Temperature packet, D = Data packet, C = Complete packet
       String command= newPacket.substring (0,1);
       char cm= command.charAt(0);
-      if (cm=='T' || cm=='D' || cm == 'W') {
+      if (cm=='T' || cm=='D' || cm == 'W' || cm == 'H') {
         int c1 = newPacket.indexOf(',');
         int c2 = newPacket.indexOf(',', c1 + 1);
         int c3 = newPacket.indexOf(',', c2 + 1);
@@ -2309,6 +2406,7 @@ void ProcessTask(void *pvParameters){
         //Serial.printf("Received packet:  cm='%c'\n",  cm);
         //Serial.printf("Full packet: %s\n", packet.c_str());
         if (cm == 'T') {
+          //trace("T input");
           // Serial.println("Temperature Packet");
           // Temperature packet: T,ROM address,temperature
           String rom = newPacket.substring(c1 + 1, c2);
@@ -2338,6 +2436,7 @@ void ProcessTask(void *pvParameters){
           clearTCFaultFlag () ; // Clear the TC fault flag
         }
         if (cm == 'D') {
+          trace("Read: " + newPacket); // record trace event
           updateTime("Update"); // Get the current time from NTP server
 
           // Serial.println("Data Packet");
@@ -2374,10 +2473,14 @@ void ProcessTask(void *pvParameters){
           clearSenderFaultFlag();
         } 
         if (cm == 'W') {
+          trace("Read: " + newPacket); // record trace event
           // Water Detector Packet
           water_bottom_detected = newPacket.substring(c1 + 1,c2);
           water_top_detected = newPacket.substring(c2 + 1,c3);
           clearTCFaultFlag () ; // Clear the TC fault flag
+        }        
+        if (cm == 'H') {
+          trace("Read: " + newPacket); // record trace event
         }
       }
     }
@@ -2870,6 +2973,7 @@ void Connect_to_wifi(){
   }
 }
 
+
 // =====================================================================
 // === SETUP ===========================================================
 // =====================================================================
@@ -3048,6 +3152,7 @@ void loop() {
   if (millis() - lastTempReadTime > 600000) {
     lastTempReadTime = millis();
     updateReceiverTemperature();
+    //trace("reading temp every 10 m");
   }
 
   // Test if Sender has failed to send data for more than 60 minutes
