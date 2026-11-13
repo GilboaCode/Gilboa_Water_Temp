@@ -1,3 +1,22 @@
+// Sender - v1.4.01
+//  * Added variable, WiFiReady to show that the WiFi is initialized.
+//  * Added a variable to denote how the Sender has started, wakeUpMethod:
+/*
+    ESP_SLEEP_WAKEUP_UNDEFINED (0): Reset was not caused by exit from deep sleep (fresh start). 
+    ESP_SLEEP_WAKEUP_EXT0 (2): Wake-up caused by external signal using RTC_IO (typically single pin). 
+    ESP_SLEEP_WAKEUP_EXT1 (3): Wake-up caused by external signal using RTC_CNTL (supports multiple GPIOs). 
+    ESP_SLEEP_WAKEUP_TIMER (4): Wake-up caused by a timer expiration. 
+    ESP_SLEEP_WAKEUP_TOUCHPAD (5): Wake-up caused by a touchpad event. 
+    ESP_SLEEP_WAKEUP_ULP (6): Wake-up caused by the ULP (Ultra-Low Power) coprocessor program. 
+    ESP_SLEEP_WAKEUP_GPIO (7): Wake-up caused by GPIO (light sleep only on ESP32, S2, and S3). 
+    ESP_SLEEP_WAKEUP_UART (8): Wake-up caused by UART activity (light sleep only). 
+    ESP_SLEEP_WAKEUP_WIFI (9): Wake-up caused by Wi-Fi (light sleep only). 
+    ESP_SLEEP_WAKEUP_COCPU (10): Wake-up caused by COCPU interrupt. 
+    ESP_SLEEP_WAKEUP_COCPU_TRAP_TRIG (11): Wake-up caused by COCPU crash. 
+    ESP_SLEEP_WAKEUP_BT (12): Wake-up caused by Bluetooth (light sleep only). 
+  */
+
+//
 // Sender - v1.4.00
 //  * Changed the sub version number from V1.2.xx to V1.4.xx to indicate a major change in the Sender code.
 //  * Removed Temperature update while in OTA mode.
@@ -58,7 +77,7 @@
 // ONLY enter sleep AFTER all readings have been sent
 //
 
-#define sender_version "v1.4.00"
+#define sender_version "v1.4.01"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -158,11 +177,14 @@ RTC_DATA_ATTR bool    vars_initialized = false;
 
 bool inSleepMode = false;
 bool justWokeUp = true;
+int wakeUpMethod = 0 ; //Wake up method
 unsigned long elapsedSeconds;
 
 bool one_wire_setup_complete = false; // 1st pass flag for 1-wire setup
 bool one_wire_fail_flag = false; // 1-wire setup fail flag
 bool LORA_fail_flag = false; // LoRa setup fail flag
+
+bool WiFiReady; // WiFi initialized and ready for OTA
 
 String lastRssiStr = "N/A";
 
@@ -290,7 +312,7 @@ void sendDataPacket(){
   // Send Data packet
   String sendPacket = "D," + String(batteryV, 2) + "," + String(sender_version) + "," + String(SLEEP_MINUTES) 
           + "," + String(aux_sleep_minutes) + "," + String(OLED_flag_from_receiver) + "," + String(debug_flag_from_receiver)
-          + "," + String(Sender_temp_farenheit, 1);
+          + "," + String(Sender_temp_farenheit, 1) + "," + String (wakeUpMethod);
   sendPacket.toUpperCase();
   if (LORA_fail_flag == false){
     int state = LoRa.transmit(sendPacket);
@@ -522,8 +544,24 @@ void enterSleep() {
 void exitSleep() {
   inSleepMode = false;
   Serial.println(">>> WAKING UP <<<");
-  
+
+  /*
+    ESP_SLEEP_WAKEUP_UNDEFINED (0): Reset was not caused by exit from deep sleep (fresh start). 
+    ESP_SLEEP_WAKEUP_EXT0 (2): Wake-up caused by external signal using RTC_IO (typically single pin). 
+    ESP_SLEEP_WAKEUP_EXT1 (3): Wake-up caused by external signal using RTC_CNTL (supports multiple GPIOs). 
+    ESP_SLEEP_WAKEUP_TIMER (4): Wake-up caused by a timer expiration. 
+    ESP_SLEEP_WAKEUP_TOUCHPAD (5): Wake-up caused by a touchpad event. 
+    ESP_SLEEP_WAKEUP_ULP (6): Wake-up caused by the ULP (Ultra-Low Power) coprocessor program. 
+    ESP_SLEEP_WAKEUP_GPIO (7): Wake-up caused by GPIO (light sleep only on ESP32, S2, and S3). 
+    ESP_SLEEP_WAKEUP_UART (8): Wake-up caused by UART activity (light sleep only). 
+    ESP_SLEEP_WAKEUP_WIFI (9): Wake-up caused by Wi-Fi (light sleep only). 
+    ESP_SLEEP_WAKEUP_COCPU (10): Wake-up caused by COCPU interrupt. 
+    ESP_SLEEP_WAKEUP_COCPU_TRAP_TRIG (11): Wake-up caused by COCPU crash. 
+    ESP_SLEEP_WAKEUP_BT (12): Wake-up caused by Bluetooth (light sleep only). 
+  */
+
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+  wakeUpMethod = wakeup_reason; // Store the wake-up reason for later use
 
   switch (wakeup_reason) {
     case ESP_SLEEP_WAKEUP_EXT0:
@@ -678,13 +716,21 @@ void setup() {
   // Initialize LoRa module
   lora_setup();
 
+  WiFiReady = false; // default state of not ready
   // Handle the WiFi access point for OTA updates
-  if (digitalRead(OTA_State_PIN) == HIGH ) {
+  if (digitalRead(OTA_State_PIN) == HIGH && OTA_flag_from_receiver == 1) {
+    Serial.println("OTA enabled\n");
     OTA_debug_mode();
+    WiFiReady = true;
   }
 
   cycleStartTime = millis();
   
+  // Initialize variables in start up
+  justWokeUp = true;
+  allReadingsSent = false;
+  inSleepMode = false;
+
   // Mark that we've initialized (survives deep sleep)
   vars_initialized = true;
 }
@@ -695,21 +741,27 @@ void setup() {
 
 void loop() {
   if (justWokeUp) {
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
-      exitSleep();
-    }
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
-      exitSleep();
-    }
+    exitSleep();
     justWokeUp = false;
-    return;
+    switch (wakeUpMethod) {
+      case ESP_SLEEP_WAKEUP_EXT0: //Wake-up caused by external signal using RTC_IO.
+        break;
+      case ESP_SLEEP_WAKEUP_TIMER: //Wake-up caused by a timer expiration.
+        break;
+      case ESP_SLEEP_WAKEUP_UNDEFINED : //Reset was not caused by exit from deep sleep (boot). 
+        break;
+      default:
+        // enterSleep;       // Commented out for debug of problem of Gilboa sending D commands 4 seconds after last D command
+        break;
+    }
+
   }
+  
 
   unsigned long now = millis();
 
   // Handle the WiFi access point for OTA updates
-  //Serial.printf("OTA_State_PIN: %d, OTA_flag_from_receiver: %d\n", digitalRead(OTA_State_PIN), OTA_flag_from_receiver);
-  if (digitalRead(OTA_State_PIN) == HIGH && OTA_flag_from_receiver == 1) {
+  if (digitalRead(OTA_State_PIN) == HIGH && OTA_flag_from_receiver == 1 && WiFiReady == true) {
   /* HANDLE UPDATE REQUESTS */
     server.handleClient();  
     //Serial.println("Debug mode active - WiFi access point for OTA updates running");

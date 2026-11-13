@@ -1,5 +1,9 @@
+// Receiver -- v1.4.01
+//  * Added cause of Sender wake up to the D command coming from the Sender
+//  * Replaced the defauts (testing) POST address with "https://httpbin.org/post".
+//
 // Receiver -- v1.4.00
-//  * Fixed Receiver Temperature reading to be every 10 minutes instead of tieing it to the Sender data packet. This is to prevent 
+//  * Fixed Receiver Temperature reading to be every 10 minutes instead of tying it to the Sender data packet. This is to prevent 
 //    the Receiver from not reading its own temperature if the Sender is not sending data packets.
 //  * Added display of Sender OTA mode to the Status command.
 //  * Added Telegram commands /_OTA_ON and /_OTA_OFF to enable or disable the OTA mode on the Sender. This is to allow the operator 
@@ -151,7 +155,7 @@
 // • All temperatures show correctly (including Air Temp)
 // • Perfect working temperature vs depth graph
 
-#define receiver_version "v1.4.00"
+#define receiver_version "v1.4.01"
 
 #include <RadioLib.h>
 #include <SPI.h>
@@ -254,7 +258,7 @@ float graphMaxY = 90.0f;
 
 String  Recipient_email = "jeffklopping@gmail.com"; // Default recipient email, can be updated on the web page and saved in NVS
 
-String postUrl = "http://jsonplaceholder.typicode.com/test"; // Default POST URL for testing, can be updated on the web page and saved in NVS
+String postUrl = "https://httpbin.org/post"; // Default POST URL for testing, can be updated on the web page and saved in NVS
 int httpCode=0;
 
 // Setup the handle for the two code tasks
@@ -346,7 +350,7 @@ int old_aux_sleep_minutes=0;
 boolean old_OLED_flag_from_receiver = false;
 boolean old_debug_flag_from_receiver = false;
 int old_SenderOTAEnableFlag = 0; // Old value of SenderOTAEnableFlag to detect changes and send to Sender
-
+int SenderWakeUpCause = 0; // Sender wake up cause (0-BootUp, 1-Sleep timer, 2-OTA button
 String uniqueRoms[14];
 int uniqueRomCount = 0;
 
@@ -550,7 +554,7 @@ void saveSenderCreds() {
 void loadPostUrl() {
   prefs.begin("post", true);  // read-only mode first
   if (prefs.isKey("url")) {
-    postUrl = prefs.getString("url", "http://jsonplaceholder.typicode.com/test");
+    postUrl = prefs.getString("url", "https://httpbin.org/post");
   } else {
     Serial.println("POST URL namespace not found yet - using default");
   }
@@ -1457,18 +1461,19 @@ void postTemperaturesToJsonPlaceholder() {
 
   // If first=true, it means no valid temperatures were added, so payload will be "[]"
   
-  Serial.print("POST to "); Serial.print(postUrl); Serial.print(" payload: "); Serial.println(payload);
+  Serial.print("POST to "); Serial.println(postUrl); 
+  Serial.print("POST payload: "); Serial.println(payload);
+  delay (10);
 
   httpCode = http.POST(payload);
   if (httpCode > 0) {
     Serial.printf("POST returned code: %d\n", httpCode);
     if (httpCode == 201 || httpCode == 200) {
       Serial.println("Data successfully sent to jsonplaceholder");
+    } else {
+      Serial.println("POST failed");
     }
-  } else {
-    Serial.println("POST failed");
   }
-
   http.end();
 }
 
@@ -2402,7 +2407,7 @@ void ProcessTask(void *pvParameters){
         int c8 = newPacket.indexOf(',', c7 + 1);
         int c9 = newPacket.indexOf(',', c8 + 1);
 
-        //Serial.printf("c1=%d, c2=%d, c3=%d, c4=%d, c5=%d, c6=%d, c7=%d, c8=%d, c9=%d\n", c1, c2, c3, c4, c5, c6, c7, c8, c9);
+        //Serial.printf("c1=%d, c2=%d, c3=%d, c4=%d, c5=%d, c6=%d, c7=%d, c8=%d, c8=%d \n", c1, c2, c3, c4, c5, c6, c7, c8, c9);
         //Serial.printf("Received packet:  cm='%c'\n",  cm);
         //Serial.printf("Full packet: %s\n", packet.c_str());
         if (cm == 'T') {
@@ -2437,19 +2442,21 @@ void ProcessTask(void *pvParameters){
         }
         if (cm == 'D') {
           trace("Read: " + newPacket); // record trace event
-          updateTime("Update"); // Get the current time from NTP server
-
+          updateTime("Update"); 
+          Serial.println("Data Packet Received");
+          //Serial.printf("c1=%d, c2=%d, c3=%d, c4=%d, c5=%d, c6=%d, c7=%d, c8=%d, c8=%d \n", c1, c2, c3, c4, c5, c6, c7, c8, c9);
           // Serial.println("Data Packet");
-          // Data packet: D,battery voltage,sender_version,SLEEP_MINUTES, OLED_FLAG, DEBUG_FLAG,Sender CPU temperature
+          // Data packet: D,battery voltage,sender_version,SLEEP_MINUTES, OLED_FLAG, DEBUG_FLAG,Sender CPU temperature, Wakeup Cause
           String battStr = newPacket.substring(c1 + 1, c2);
           SenderVersion = newPacket.substring(c2 + 1, c3);
           String sleepStr = newPacket.substring(c3 + 1, c4);
           SenderSleepTime = sleepStr.toInt();
           int tempSleep = newPacket.substring(c4 + 1, c5).toInt();
-          bool tempOLED = newPacket.substring(c5 + 1, c6).toInt() != 0;
-          bool tempDebug = newPacket.substring(c6 + 1,c7).toInt() != 0;
-          Sender_temp_farenheit = newPacket.substring(c7 + 1);
-          //Serial.println(Sender_temp_farenheit);
+          bool tempOLED = newPacket.substring(c5 + 1, c6).toInt() ;
+          bool tempDebug = newPacket.substring(c6 + 1,c7).toInt() ;
+          Sender_temp_farenheit = newPacket.substring(c7 + 1,c8) ;
+          SenderWakeUpCause = newPacket.substring(c8 +1).toInt() != 0;
+
 
           if (tempSleep == aux_sleep_minutes &&
               tempOLED == OLED_flag_from_receiver &&
@@ -3112,7 +3119,6 @@ void loop() {
     newPacketReceived = false;
     updateOLED();
     postTemperaturesToJsonPlaceholder();   // Only POST at the end
-    Serial.println("Posted temperatures to HTTP endpoint");      
   }
 
   // Handle email message on water detected

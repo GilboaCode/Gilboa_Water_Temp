@@ -1,12 +1,15 @@
 {
 	"folders": [
 		{
-			"name": "Gilboa_H2O_Receiver",
 			"path": ".."
 		},
 		{
 			"name": "Gilboa_H2O_Sender",
 			"path": "../../../SENDER/Gilboa_H2O_Sender"
+		},
+		{
+			"name": "Gilboa GPS- Mapper",
+			"path": "../../../../../Gilboa_GPS_Mapper/Visual_Studio_Code/Gilboa GPS- Mapper"
 		}
 	],
 	"settings": {}
